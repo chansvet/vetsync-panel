@@ -48,9 +48,9 @@ assert.match(html, /쪼코 \(#12345 · 푸들\)/);
 assert.match(html, /background:#fef08a[^>]+>연장<\/span>/);
 assert.match(html, /SAM <span[^>]+>22mpk→20mpk<\/span> IV/);
 assert.match(html, /<span[^>]+>내일 9시<\/span>/);
-assert.match(html, /line-through[^>]+>내일 1시<\/span>/);
+assert.match(html, /line-through[^>]+><u>내일 1시<\/u><\/span>/);
 assert.match(html, /maro 1mpk <u>SC<\/u> \(21시\)/);
-assert.match(html, /<span[^>]+>B12 <u>IM<\/u> \(<u>18시<\/u>\)<\/span>/);
+assert.match(html, /<span[^>]+>B12 <u>IM<\/u> \(18시\)<\/span>/);
 assert.match(html, /퇴원환자 \(#12345 · 푸들\)/);
 assert.match(html, /text-decoration:line-through[^>]+>퇴원<\/span>/);
 assert.match(html, /line-through[^>]+>cefa 20mpk IV \(17시\)<\/span>/);
@@ -72,12 +72,20 @@ const bidNormal = context.__test.toHtml(context.__test.rawItem(item('cefa', '20m
 const bidChanged = context.__test.toHtml(context.__test.rawItem(item('cefa', '20mpk', 'IV', today(17), { frequency: 'BID' })));
 const tidChanged = context.__test.toHtml(context.__test.rawItem(item('SAM', '20mpk', 'IV', today(21), { frequency: 'TID' })));
 const sidVariable = context.__test.toHtml(context.__test.rawItem(item('maro', '1mpk', 'SC', today(18), { frequency: 'SID' })));
+const inferredBid = context.__test.toHtml(context.__test.rawItem(item('cefa', '20mpk', 'IV', [
+  ['오늘', 17, 17], ['내일', 9, 109],
+])));
+const inferredTid = context.__test.toHtml(context.__test.rawItem(item('SAM', '20mpk', 'IV', [
+  ['오늘', 21, 21], ['내일', 1, 101], ['내일', 9, 109],
+])));
 assert.ok(bidNormal.includes('(21시)'));
 assert.ok(!bidNormal.includes('<u>'));
 assert.ok(bidChanged.includes('(<u>17시</u>)'));
 assert.ok(tidChanged.includes('(<u>21시</u>)'));
 assert.ok(sidVariable.includes('(18시)'));
 assert.ok(!sidVariable.includes('(<u>18시</u>)'));
+assert.ok(inferredBid.includes('(<u>17시</u>, 내일 9시)'));
+assert.ok(inferredTid.includes('(<u>21시</u>, 내일 1시, 내일 9시)'));
 
 const currentBid = patient('기존기록', false, [item('cefa', '20mpk', 'IV', today(21), { frequency: 'BID', note: 'BID' })]);
 const legacyBid = JSON.parse(JSON.stringify(currentBid));

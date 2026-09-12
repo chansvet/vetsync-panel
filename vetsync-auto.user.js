@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      1.0.9
+// @version      1.0.10
 // @description  Safari 전용 주소로 VetSync를 열면 채혈·주사 패널을 자동으로 표시합니다. 실험적 기능입니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -169,11 +169,19 @@
     if (SKIP.test(n) || PROC.test(n) || CRI.test(n) || EYE.test(n) || NOTINJ.test(n) || ORAL.test(n)) return false;
     return ROUTE.test(n) || KNOWN.test(n);
     };
+    const frequencyFrom = (text) => {
+    const value = String(text || '');
+    const named = value.match(/\b(sid|bid|tid|qid)\b/i);
+    if (named) return named[1].toUpperCase();
+    const interval = value.match(/\bq\s*(6|8|12|24)\s*h\b/i);
+    if (interval) return ({ 6: 'QID', 8: 'TID', 12: 'BID', 24: 'SID' })[interval[1]];
+    const korean = value.match(/(?:하루|1일)\s*(1|2|3|4)\s*회/);
+    return korean ? ({ 1: 'SID', 2: 'BID', 3: 'TID', 4: 'QID' })[korean[1]] : '';
+    };
     function parseDrug(name) {
     let s = (name || '').trim();
     const notes = [];
-    const frequencyMatch = s.match(/\b(sid|bid|tid|qid)\b/i);
-    const frequency = frequencyMatch ? frequencyMatch[1].toUpperCase() : '';
+    const frequency = frequencyFrom(s);
     s = s.replace(/(\d+(?:\.\d+)?\s*\S*)\s*(?:->|→)\s*(\d)/g, '$2').replace(/\(\s*(\d+(?:\.\d+)?)\s*\)/g, ' $1 ');
     const pull = (re) => {
     const m = s.match(re);
@@ -204,7 +212,7 @@
     const name = (row.displayName || '').trim();
     if (!isInjection(name)) return;
     const parts = splitDrugs(name);
-    const rowFrequency = parseDrug(name).frequency;
+    const rowFrequency = frequencyFrom(name + ' ' + (row.instructionText || ''));
     (row.cells || []).forEach((cell) => {
     if (!hours.includes(cell.hourSlot) || !LIVE.includes(cell.status)) return;
     if (!admitted(chart, detail, date, cell.hourSlot)) return;
@@ -227,8 +235,10 @@
     const timeKey = (t) => t.tag + '|' + t.hour;
     const frequencyOf = (item) => {
     if (item && item.frequency) return item.frequency;
-    const match = String(item && item.note || '').match(/\b(sid|bid|tid|qid)\b/i);
-    return match ? match[1].toUpperCase() : '';
+    const written = frequencyFrom(String(item && item.note || '') + ' ' + String(item && item.instruction || ''));
+    if (written) return written;
+    const count = new Set((item && item.times || []).map(timeKey)).size;
+    return ({ 1: 'SID', 2: 'BID', 3: 'TID', 4: 'QID' })[count] || '';
     };
     const timeLabel = (t, item) => {
     const label = (t.tag === '내일' ? '내일 ' : '') + t.hour + '시';
