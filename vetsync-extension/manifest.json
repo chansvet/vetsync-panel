@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "VetSync 인턴 패널",
+  "version": "1.0.0",
+  "description": "입원 차트에서 아침 채혈 목록과 오후 주사 목록을 뽑아 보여준다. 조회만 한다.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://vetsync4.vetu1.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ]
+}
