@@ -24,12 +24,12 @@ fs.writeFileSync('vetsync-panel.bookmarklet.txt', url);
 
 const USERSCRIPT_BASE = 'https://chansvet.github.io/vetsync-panel';
 const AUTO_URL = 'https://vetsync4.vetu1.com/?vetsync-panel=1';
-const USERSCRIPT_VERSION = '1.0.19';
+const USERSCRIPT_VERSION = '1.0.20';
 const userscriptMeta = `// ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
 // @version      ${USERSCRIPT_VERSION}
-// @description  Safari 전용 주소로 VetSync를 열면 채혈·주사 패널을 자동으로 표시합니다. 실험적 기능입니다.
+// @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
 // @inject-into  auto
@@ -49,24 +49,33 @@ const userscript = userscriptMeta + `
     sessionStorage.setItem(TRIGGER, '1');
     sessionStorage.setItem(STARTED_AT, String(Date.now()));
   };
-  const startedAt = Number(sessionStorage.getItem(STARTED_AT)) || Date.now();
+  const launchPanel = (buttonOnly) => {
+    if (buttonOnly) window.__VETSYNC_BUTTON = true;
+    else delete window.__VETSYNC_BUTTON;
+${stripped.split('\n').map((line) => '    ' + line).join('\n')}
+  };
+  const ready = () => document.body && !location.pathname.startsWith('/login') && localStorage.getItem('auth-storage');
   const timer = setInterval(() => {
-    if (sessionStorage.getItem(TRIGGER) !== '1') {
+    const autoOpen = sessionStorage.getItem(TRIGGER) === '1';
+    if (!autoOpen) {
+      if (!ready()) return;
       clearInterval(timer);
+      launchPanel(true);
       return;
     }
+    const startedAt = Number(sessionStorage.getItem(STARTED_AT)) || Date.now();
     if (Date.now() - startedAt > WAIT_LIMIT_MS) {
       clearInterval(timer);
       sessionStorage.removeItem(TRIGGER);
       sessionStorage.removeItem(STARTED_AT);
       return;
     }
-    if (!document.body || location.pathname.startsWith('/login') || !localStorage.getItem('auth-storage')) return;
+    if (!ready()) return;
 
     sessionStorage.removeItem(TRIGGER);
     sessionStorage.removeItem(STARTED_AT);
     clearInterval(timer);
-${stripped.split('\n').map((line) => '    ' + line).join('\n')}
+    launchPanel(false);
 
     const watchAuth = setInterval(() => {
       const panel = document.getElementById('vsp');
@@ -134,25 +143,25 @@ const page = `<!doctype html>
   <p class="sub">오늘 채혈과 주사를 조회합니다. 차트를 바꾸지 않습니다.</p>
 
   <section>
-    <h2>아이폰 자동실행 · 실험적</h2>
+    <h2>자동 업데이트 · 한 번만 설치</h2>
+    <p>북마크를 교체하지 않아도 됩니다. 평소 VetSync를 열면 오른쪽 아래에 <b>목록</b> 버튼이 생깁니다.</p>
     <ol>
-      <li>무료 <a href="https://apps.apple.com/app/userscripts/id1463298887">Userscripts 앱</a>을 설치합니다.</li>
-      <li>아이폰 설정의 Safari 확장 프로그램에서 Userscripts를 켭니다.</li>
-      <li>아래 자동실행 파일을 Userscripts에 한 번 등록합니다.</li>
-      <li>단축어 앱에서 <b>URL 열기</b>에 아래 전용 주소를 넣고 홈 화면에 추가합니다.</li>
+      <li>병원 컴퓨터 Chrome에서는 <a href="https://www.tampermonkey.net/">Tampermonkey</a>를 한 번 설치합니다.</li>
+      <li>아이폰 Safari에서는 <a href="https://apps.apple.com/app/userscripts/id1463298887">Userscripts 앱</a>을 설치하고 Safari 확장 프로그램에서 켭니다.</li>
+      <li>아래 파일을 한 번 등록합니다. 확장 프로그램이 주기적으로 새 배포본을 확인합니다.</li>
     </ol>
-    <a class="drag secondary" href="vetsync-auto.user.js">자동실행 파일 열기</a>
+    <a class="drag secondary" href="vetsync-auto.user.js">자동 업데이트 파일 열기</a>
     <button id="download-js">JS 파일 다운로드</button>
     <textarea id="auto-url" readonly>${AUTO_URL}</textarea>
     <button id="copy-auto">전용 주소 복사</button>
-    <p class="note">이 기능은 Safari Userscripts에 의존하므로 기기마다 안정적이지 않을 수 있습니다. 홈 화면 웹앱에서는 실행되지 않습니다. 아래 Safari 북마크 방식이 권장 방법입니다.</p>
+    <p class="note">홈 화면에 추가한 Safari 웹앱에서는 확장 프로그램이 실행되지 않습니다. 아이폰은 일반 Safari에서 사용하고, 업데이트가 즉시 안 보이면 Userscripts의 새로고침을 누르세요.</p>
   </section>
 
   <section>
-    <h2>컴퓨터 Chrome · 북마크 방식</h2>
+    <h2>확장 설치가 어려울 때 · 북마크 방식</h2>
     <p>아래 버튼을 북마크바로 끌어다 놓으세요.</p>
     <a id="bookmarklet-link" class="drag" href="PLACEHOLDER">VetSync 패널</a>
-    <p class="note">북마크바가 안 보이면 Cmd+Shift+B로 켭니다. VetSync 화면을 연 상태에서 이 북마크를 누르면 됩니다.</p>
+    <p class="note">이 북마크는 업데이트마다 교체가 필요합니다. 확장 설치가 불가할 때만 사용하세요.</p>
   </section>
 
   <section>

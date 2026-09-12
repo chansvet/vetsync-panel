@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      1.0.19
-// @description  Safari 전용 주소로 VetSync를 열면 채혈·주사 패널을 자동으로 표시합니다. 실험적 기능입니다.
+// @version      1.0.20
+// @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
 // @inject-into  auto
@@ -21,23 +21,9 @@
     sessionStorage.setItem(TRIGGER, '1');
     sessionStorage.setItem(STARTED_AT, String(Date.now()));
   };
-  const startedAt = Number(sessionStorage.getItem(STARTED_AT)) || Date.now();
-  const timer = setInterval(() => {
-    if (sessionStorage.getItem(TRIGGER) !== '1') {
-      clearInterval(timer);
-      return;
-    }
-    if (Date.now() - startedAt > WAIT_LIMIT_MS) {
-      clearInterval(timer);
-      sessionStorage.removeItem(TRIGGER);
-      sessionStorage.removeItem(STARTED_AT);
-      return;
-    }
-    if (!document.body || location.pathname.startsWith('/login') || !localStorage.getItem('auth-storage')) return;
-
-    sessionStorage.removeItem(TRIGGER);
-    sessionStorage.removeItem(STARTED_AT);
-    clearInterval(timer);
+  const launchPanel = (buttonOnly) => {
+    if (buttonOnly) window.__VETSYNC_BUTTON = true;
+    else delete window.__VETSYNC_BUTTON;
     (() => {
     const API = 'https://api-vetsync4.vetu1.com/api/v1';
     const HOSPITAL_ID = '24';
@@ -676,6 +662,29 @@
     open();
     }
     })();
+  };
+  const ready = () => document.body && !location.pathname.startsWith('/login') && localStorage.getItem('auth-storage');
+  const timer = setInterval(() => {
+    const autoOpen = sessionStorage.getItem(TRIGGER) === '1';
+    if (!autoOpen) {
+      if (!ready()) return;
+      clearInterval(timer);
+      launchPanel(true);
+      return;
+    }
+    const startedAt = Number(sessionStorage.getItem(STARTED_AT)) || Date.now();
+    if (Date.now() - startedAt > WAIT_LIMIT_MS) {
+      clearInterval(timer);
+      sessionStorage.removeItem(TRIGGER);
+      sessionStorage.removeItem(STARTED_AT);
+      return;
+    }
+    if (!ready()) return;
+
+    sessionStorage.removeItem(TRIGGER);
+    sessionStorage.removeItem(STARTED_AT);
+    clearInterval(timer);
+    launchPanel(false);
 
     const watchAuth = setInterval(() => {
       const panel = document.getElementById('vsp');

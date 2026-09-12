@@ -20,8 +20,8 @@
 - `build-bookmarklet.js` — 위 원본을 북마크에 넣을 수 있는 한 줄 주소로 만들고
   설치용 HTML을 생성한다. `node build-bookmarklet.js` 로 돌린다.
 - `bookmarklet-install.html` — 생성된 설치 안내 페이지. 컴퓨터는 드래그, 아이폰은 복사 후 붙여넣기.
-- `vetsync-auto.user.js` — 아이폰 Safari의 Userscripts 확장용 자동실행 파일. 전용 URL로
-  VetSync를 열었을 때만 패널을 자동으로 띄운다.
+- `vetsync-auto.user.js` — Tampermonkey/Userscripts 확장용 자동 업데이트 파일.
+  일반 VetSync 화면에서 목록 버튼을 띄우고, 전용 URL로 열면 패널을 바로 띄운다.
 - `vetsync-bloodwork.js` — 채혈만 뽑는 콘솔 전용 스크립트.
 - `vetsync-injections.js` — 주사만 뽑는 콘솔 전용 스크립트.
 
@@ -60,13 +60,11 @@ Safari Userscripts와 단축어를 이용한 자동실행은 실험적 기능이
 자동실행할 수 없다.
 
 홈 화면에 추가한 웹앱은 Safari 확장 프로그램을 실행하지 않으며, GitHub Pages도 VetSync 로그인 저장소를
-읽을 수 없다. 따라서 아이폰에서 지원하는 정상 사용 경로는 VetSync에 Safari로 로그인한 뒤, 같은 Safari에서
-`javascript:` 북마크를 직접 누르는 방식이다. 자동실행이 실패해도 화면 구석 버튼이나 별도 실행 페이지를
-전제로 안내하지 않는다.
+읽을 수 없다. 아이폰에서 자동 업데이트 파일을 쓰려면 일반 Safari에서 Userscripts를 켠 상태여야 한다. 병원 컴퓨터에서는 Tampermonkey에 파일을 한 번 설치하면 북마크 교체 없이 목록 버튼을 쓸 수 있다.
 
-자동실행 파일도 `build-bookmarklet.js`가 `vetsync-panel.src.js`에서 생성한다. 판정 규칙을
+자동 업데이트 파일도 `build-bookmarklet.js`가 `vetsync-panel.src.js`에서 생성한다. 판정 규칙을
 수정할 때는 `USERSCRIPT_VERSION`을 올린 뒤 `node build-bookmarklet.js`를 실행한다.
-북마클릿, 자동실행 파일, 업데이트 확인 파일이 함께 갱신된다.
+`@updateURL`이 들어간 새 파일이 배포되면 확장 프로그램이 주기적으로 확인해 적용한다. 북마클릿은 독립 코드이므로 자동 업데이트되지 않는다.
 
 ## 응답 구조
 

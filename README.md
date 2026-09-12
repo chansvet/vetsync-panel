@@ -12,8 +12,8 @@ node build-bookmarklet.js
 `vetsync-panel.src.js`에서 아래 파일을 생성한다.
 
 - `index.html`: 설치 안내 페이지
-- `vetsync-panel.bookmarklet.txt`: Safari/Chrome 북마크 주소
-- `vetsync-auto.user.js`, `vetsync-auto.meta.js`: Userscripts용 자동실행 파일
+- `vetsync-panel.bookmarklet.txt`: Safari/Chrome 북마크 주소. 업데이트마다 다시 설치해야 한다.
+- `vetsync-auto.user.js`, `vetsync-auto.meta.js`: Tampermonkey/Userscripts용 자동 업데이트 파일. 일반 VetSync 화면에 목록 버튼을 추가한다.
 - `vetsync-extension/`: Chrome 확장 프로그램 파일
 
 ## 검사

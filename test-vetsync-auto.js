@@ -34,7 +34,7 @@ assert.strictEqual(sessionA.getItem('vetsync-panel-auto-open'), '1');
 assert.ok(Number(sessionA.getItem('vetsync-panel-auto-open-at')) > 0);
 assert.strictEqual(timers.length, 1);
 
-assert.match(source, /@version\s+1\.0\.19/);
+assert.match(source, /@version\s+1\.0\.20/);
 assert.match(source, /@inject-into\s+auto/);
 assert.doesNotMatch(source, /@weight/);
 assert.doesNotMatch(source, /vsp-launcher/);
@@ -45,5 +45,28 @@ assert.match(source, /오늘 첫 확인 · 기준 목록 저장됨/);
 assert.match(source, /이전 확인/);
 assert.match(source, /제외:/);
 assert.doesNotMatch(source, /마지막 시간 취소/);
+
+const normalTimers = [];
+const nodes = {};
+const normalDocument = {
+  body: { appendChild: (node) => { nodes[node.id] = node; } },
+  getElementById: (id) => nodes[id] || null,
+  createElement: () => ({ setAttribute: () => {} }),
+};
+vm.runInNewContext(source, {
+  URL,
+  Date,
+  location: { href: 'https://vetsync4.vetu1.com/', hostname: 'vetsync4.vetu1.com', pathname: '/' },
+  localStorage: storage({ 'auth-storage': '{"state":{"accessToken":"test"}}' }),
+  sessionStorage: storage(),
+  window: {},
+  document: normalDocument,
+  alert: () => { throw new Error('알림이 뜨면 안 됩니다.'); },
+  setInterval: (callback) => { normalTimers.push(callback); return normalTimers.length; },
+  clearInterval: () => {},
+});
+assert.strictEqual(normalTimers.length, 1);
+normalTimers[0]();
+assert.ok(nodes['vsp-btn']);
 
 console.log('VetSync 자동실행 복구 테스트 통과');
