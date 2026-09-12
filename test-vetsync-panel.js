@@ -5,7 +5,7 @@ const vm = require('vm');
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.replace(
   "  if (!location.hostname.endsWith('vetsync4.vetu1.com')) {\n    alert('VetSync 화면에서 눌러주세요.');\n  } else if (window.__VETSYNC_BUTTON) {\n    mountButton();\n    // 화면이 다시 그려지면서 버튼이 사라질 수 있으므로 주기적으로 확인한다\n    setInterval(mountButton, 3000);\n  } else {\n    open();\n  }",
-  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml };'
+  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, sortSections };'
 );
 const context = {};
 vm.createContext(context);
@@ -94,5 +94,22 @@ const compatible = context.__test.compareSnapshot(
   { patients: { legacy: currentBid } }, { patients: { legacy: legacyBid } }, {}
 );
 assert.strictEqual(compatible.changes, 0);
+
+const sortable = [{ heading: '정렬', groups: [
+  { title: '다', sortName: '다', sortCage: 'D장-1', body: [] },
+  { title: '가', sortName: '가', sortCage: 'A장-10', body: [] },
+  { title: '라', sortName: '라', sortCage: 'ICU-2', body: [] },
+  { title: '나', sortName: '나', sortCage: 'B장-3', body: [] },
+  { title: '마', sortName: '마', sortCage: 'C장-1', body: [] },
+  { title: '바', sortName: '바', sortCage: 'A장-2', body: [] },
+] }];
+assert.deepStrictEqual(
+  Array.from(context.__test.sortSections(sortable, 'name')[0].groups, (g) => g.title),
+  ['가', '나', '다', '라', '마', '바']
+);
+assert.deepStrictEqual(
+  Array.from(context.__test.sortSections(sortable, 'cage')[0].groups, (g) => g.title),
+  ['나', '바', '가', '라', '마', '다']
+);
 
 console.log('VetSync 변경 비교 테스트 통과');

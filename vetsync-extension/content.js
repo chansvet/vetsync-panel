@@ -109,6 +109,8 @@ const species = { DOG: '강아지', CAT: '고양이' }[chart.patient.species] ||
 rows.push({
 title: patientTitle(chart.patient.name, chart.patient.hospitalPatientCode, breedOf(chart.patient)),
 cage: species + ' · ' + (chart.cageLabel || '미지정'),
+sortName: chart.patient.name,
+sortCage: chart.cageLabel || '미지정',
 body: [labs.map((r) => r.displayName.trim()).join(' / ')],
 note: [labs.map(noteOf).filter(Boolean).join(' / '), temp ? '체온 ' + temp.v : ''].filter(Boolean).join(' / '),
 pid: chart.patient.patientId,
@@ -303,8 +305,12 @@ changes += 1;
 const line = changedItem(item, null, 'removed');
 (item.conditional ? conds : lines).push(line);
 });
-if (lines.length) normal.push({ title, cage: p.cage, status, body: lines, note: '' });
-cond.push(...conds.map((line) => title + (status ? ' [' + status + ']' : '') + ' · ' + line));
+if (lines.length) normal.push({
+title, cage: p.cage, status, sortName: p.name, sortCage: p.cage, body: lines, note: '',
+});
+if (conds.length) cond.push({
+title, cage: p.cage, status, sortName: p.name, sortCage: p.cage, body: conds, note: '',
+});
 });
 return { normal, cond, changes };
 }
@@ -342,7 +348,7 @@ let previous = loadBaseline(date);
 if (!previous) { saveBaseline(date, snapshot); previous = snapshot; }
 const g = compareSnapshot(snapshot, previous, states);
 const out = [{ heading: date + ' 17시 ~ ' + next + ' 15시 주사', groups: g.normal }];
-if (g.cond.length) out.push({ heading: '조건부', groups: g.cond.map((c) => ({ title: '', cage: '', body: [c], note: '' })) });
+if (g.cond.length) out.push({ heading: '조건부', groups: g.cond });
 out.changeCount = g.changes;
 out.snapshot = snapshot;
 out.baselineKey = baselineKey(date);
@@ -379,6 +385,24 @@ g.body.map((b) => '<div style="margin-top:3px">' + toHtml(b) + '</div>').join(''
 (g.note ? '<div style="margin-top:3px;color:#b45309;font-weight:600">' + esc(g.note) + '</div>' : '') +
 '</div>').join('') : '<p style="color:#6b7280">해당 항목이 없습니다.</p>')
 ).join('');
+const compareText = (a, b) => String(a || '').localeCompare(String(b || ''), 'ko', {
+numeric: true, sensitivity: 'base',
+});
+const cageRank = (cage) => {
+const value = String(cage || '').toUpperCase().replace(/\s+/g, '');
+const code = value.startsWith('ICU') ? 'ICU' : (/^[BACD]/.test(value) ? value[0] : '');
+const order = { B: 0, A: 1, ICU: 2, C: 3, D: 4 };
+return Object.prototype.hasOwnProperty.call(order, code) ? order[code] : 99;
+};
+const sortSections = (sections, mode) => sections.map((section) => ({
+...section,
+groups: [...section.groups].sort((a, b) => {
+const byName = compareText(a.sortName || a.title, b.sortName || b.title);
+if (mode === 'name') return byName || compareText(a.sortCage || a.cage, b.sortCage || b.cage);
+return cageRank(a.sortCage || a.cage) - cageRank(b.sortCage || b.cage) ||
+compareText(a.sortCage || a.cage, b.sortCage || b.cage) || byName;
+}),
+}));
 const TABS = [
 { id: 'blood', label: '채혈', run: bloodwork },
 { id: 'inj', label: '주사', run: injections },
@@ -402,6 +426,7 @@ TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-wei
 document.body.appendChild(box);
 let text = '';
 let activeId = 'blood';
+let sortMode = 'name';
 let monitorTimer = null;
 let monitorBusy = false;
 let monitorEnabled = localStorage.getItem(MONITOR_KEY) === '1';
@@ -422,9 +447,18 @@ notification.onclick = () => window.focus();
 const paint = (id, sections) => {
 const body = box.querySelector('#vsp-body');
 if (!body) return;
-text = asText(sections);
+const ordered = sortSections(sections, sortMode);
+text = asText(ordered);
 const notificationNote = !('Notification' in window) || Notification.permission === 'denied' ?
 ' · 화면 표시만' : '';
+const sortControl =
+'<div style="margin:0 -16px;padding:9px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px">' +
+'<strong style="font-size:13px;color:#4b5563">정렬</strong>' +
+'<div style="display:flex;border:1px solid #9ca3af;border-radius:6px;overflow:hidden">' +
+['name', 'cage'].map((mode) => '<button data-sort="' + mode + '" style="font:inherit;font-size:13px;font-weight:700;' +
+'padding:5px 11px;border:0;border-left:' + (mode === 'cage' ? '1px solid #9ca3af' : '0') + ';' +
+'background:' + (sortMode === mode ? '#374151' : '#fff') + ';color:' + (sortMode === mode ? '#fff' : '#374151') + '">' +
+(mode === 'name' ? '이름순' : '장순') + '</button>').join('') + '</div></div>';
 const monitor = id === 'inj' ?
 '<div style="margin:0 -16px;padding:10px 16px;background:#f3f4f6;border-bottom:1px solid #d1d5db;display:flex;align-items:center;gap:9px">' +
 '<strong>변경 감시</strong><span style="font-size:13px;color:#6b7280">' +
@@ -435,7 +469,10 @@ const changes = id === 'inj' && sections.changeCount ?
 '<div style="margin:0 -16px;padding:9px 16px;background:#fff7ed;border-bottom:1px solid #fed7aa;display:flex;align-items:center;gap:10px">' +
 '<strong style="color:#c2410c">변경 ' + sections.changeCount + '건</strong><span style="flex:1"></span>' +
 '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #c2410c;border-radius:6px;background:#fff;color:#c2410c">변경 확인</button></div>' : '';
-body.innerHTML = monitor + changes + render(sections);
+body.innerHTML = sortControl + monitor + changes + render(ordered);
+body.querySelectorAll('[data-sort]').forEach((button) => {
+button.onclick = () => { sortMode = button.dataset.sort; paint(id, sections); };
+});
 const accept = body.querySelector('#vsp-accept');
 if (accept) accept.onclick = () => {
 localStorage.setItem(sections.baselineKey, JSON.stringify(sections.snapshot));
