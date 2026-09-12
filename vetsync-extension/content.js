@@ -29,6 +29,7 @@ const U0 = '\u0001', U1 = '\u0002';
 const E0 = '\u0003', E1 = '\u0004';
 const O0 = '\u0005', O1 = '\u0006';
 const X0 = '\u0007', X1 = '\u0008';
+const G0 = '\u0009', G1 = '\u000B';
 const INJ_BASELINE = 'vetsync-injection-baseline-v1:';
 const pad = (n) => String(n).padStart(2, '0');
 const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -107,9 +108,9 @@ patient.speciesBreed || patient.breed;
 return typeof breed === 'object' ? (breed.name || breed.label || breed.displayName || '품종 미상') :
 (breed || '품종 미상');
 };
-const patientTitle = (name, code, breed) => {
+const patientTitle = (name, code, breed, weight = '') => {
 const patientCode = code ? (String(code).startsWith('#') ? String(code) : '#' + code) : '';
-const info = [patientCode, breed].filter(Boolean).join(' · ');
+const info = [weight, patientCode, breed].filter(Boolean).join(' · ');
 return name + (info ? ' (' + info + ')' : '');
 };
 async function bloodwork(date) {
@@ -243,6 +244,10 @@ return expected.includes(t.hour) ? label : U0 + label + U1;
 };
 const orange = (s) => O0 + s + O1;
 const cancelled = (s) => X0 + s + X1;
+const plainTimeLabel = (t) => (t.tag === '내일' ? '내일 ' : '') + t.hour + '시';
+const excluded = (times) => G0 + '제외: ' + times.map(plainTimeLabel).join(', ') + G1;
+const timeGroups = (active, skipped) => [active.join(', '), skipped.length ? excluded(skipped) : '']
+.filter(Boolean).join(' | ');
 const routeLabel = (route) => /^(SC|IM)$/.test(route) ? U0 + route + U1 : route;
 function makeSnapshot(rows) {
 const patients = {};
@@ -269,15 +274,12 @@ p.items = Object.values(p.items).map((item) => ({
 });
 return { checkedAt: new Date().toISOString(), patients };
 }
-const displayedTime = (time, item) => time.cancelled ?
-cancelled(timeLabel(time, item) + ' 취소') : timeLabel(time, item);
 const rawItem = (item) => {
 const label = [item.drug, item.dose, routeLabel(item.route)].filter(Boolean).join(' ');
 const extra = [item.note, item.instruction].filter(Boolean).join(', ');
-const lastCancelled = item.times.length && item.times[item.times.length - 1].cancelled ?
-' ' + orange('[마지막 시간 취소]') : '';
-return label + ' (' + item.times.map((t) => displayedTime(t, item)).join(', ') + ')' + lastCancelled +
-(extra ? ' [' + extra + ']' : '');
+const active = item.times.filter((t) => !t.cancelled).map((t) => timeLabel(t, item));
+const skipped = item.times.filter((t) => t.cancelled);
+return label + ' (' + timeGroups(active, skipped) + ')' + (extra ? ' [' + extra + ']' : '');
 };
 function changedItem(item, prev, kind) {
 let text;
@@ -291,21 +293,22 @@ const label = [field(item.drug, prev.drug), field(item.dose, prev.dose), route]
 .filter(Boolean).join(' ');
 const oldByTime = new Map(prev.times.map((t) => [timeKey(t), t]));
 const nowTimes = new Set(item.times.map(timeKey));
-const times = item.times.map((t) => {
+const active = [];
+const skipped = [];
+item.times.forEach((t) => {
 const old = oldByTime.get(timeKey(t));
-if (!old) return t.cancelled ? displayedTime(t, item) : orange(displayedTime(t, item));
-if (!!old.cancelled === !!t.cancelled) return displayedTime(t, item);
-return t.cancelled ? displayedTime(t, item) : orange(timeLabel(t, item) + ' 재개');
+if (t.cancelled) { skipped.push(t); return; }
+if (!old) { active.push(orange(timeLabel(t, item))); return; }
+if (old.cancelled) { active.push(orange(timeLabel(t, item) + ' 재개')); return; }
+active.push(timeLabel(t, item));
 });
 prev.times.forEach((t) => {
-if (!nowTimes.has(timeKey(t))) times.push(cancelled(timeLabel(t, prev) + ' 취소'));
+if (!t.cancelled && !nowTimes.has(timeKey(t))) active.push(cancelled(timeLabel(t, prev)));
 });
 const extraNow = [item.note, item.instruction].filter(Boolean).join(', ');
 const extraOld = [prev.note, prev.instruction].filter(Boolean).join(', ');
 const extra = extraNow === extraOld ? extraNow : orange([extraOld, extraNow].filter(Boolean).join('→'));
-const lastCancelled = item.times.length && item.times[item.times.length - 1].cancelled ?
-' ' + orange('[마지막 시간 취소]') : '';
-text = label + ' (' + times.join(', ') + ')' + lastCancelled + (extra ? ' [' + extra + ']' : '');
+text = label + ' (' + timeGroups(active, skipped) + ')' + (extra ? ' [' + extra + ']' : '');
 }
 return text;
 }
@@ -325,7 +328,7 @@ const p = now || old;
 const state = states[pid] || {};
 const extended = !!(old && old.predicted && !now?.predicted && state.extended);
 const discharged = !!(!now && old && state.discharged);
-const title = patientTitle(p.name, p.code, p.breed);
+const title = patientTitle(p.name, p.code, p.breed, p.weight || '- kg');
 let status = '';
 if (now?.predicted) status = '미연장';
 else if (extended) { status = '연장'; changes += 1; }
@@ -346,6 +349,7 @@ const line = changedItem(item, prev, prev ? 'changed' : 'added');
 });
 oldItems.forEach((item, i) => {
 if (used.has(i)) return;
+if (!item.times.some((time) => !time.cancelled)) return;
 changes += 1;
 const line = changedItem(item, null, 'removed');
 (item.conditional ? conds : lines).push(line);
@@ -353,12 +357,12 @@ const line = changedItem(item, null, 'removed');
 const updated = changes > priorChanges;
 if (lines.length) normal.push({
 updated,
-title, cage: p.cage + ' · ' + (p.weight || '- kg'), status,
+title, cage: p.cage, status,
 sortName: p.name, sortCage: p.cage, body: lines, note: '',
 });
 if (conds.length) cond.push({
 updated: updated && !lines.length,
-title, cage: p.cage + ' · ' + (p.weight || '- kg'), status,
+title, cage: p.cage, status,
 sortName: p.name, sortCage: p.cage, body: conds, note: '',
 });
 });
@@ -387,13 +391,22 @@ const states = {};
 today.charts.forEach((c) => {
 states[String(c.patient.patientId)] = { discharged: !!c.discharged, extended: false };
 });
-today.charts.forEach((c, i) => rows.push(...pickInj(c, today.details[i], date, EVENING, '오늘')));
-const extended = new Set(tomorrow.charts.map((c) => String(c.patient.patientId)));
+const discharged = new Set(today.charts.filter((c) => c.discharged).map((c) => String(c.patient.patientId)));
+today.charts.forEach((c, i) => {
+if (!c.discharged) rows.push(...pickInj(c, today.details[i], date, EVENING, '오늘'));
+});
+const extended = new Set(tomorrow.charts
+.filter((c) => !c.discharged && !discharged.has(String(c.patient.patientId)))
+.map((c) => String(c.patient.patientId)));
 extended.forEach((pid) => {
 states[pid] = states[pid] || { discharged: false, extended: false };
 states[pid].extended = true;
 });
-tomorrow.charts.forEach((c, i) => rows.push(...pickInj(c, tomorrow.details[i], next, NEXT, '내일')));
+tomorrow.charts.forEach((c, i) => {
+if (!c.discharged && !discharged.has(String(c.patient.patientId))) {
+rows.push(...pickInj(c, tomorrow.details[i], next, NEXT, '내일'));
+}
+});
 today.charts.forEach((c, i) => {
 if (extended.has(String(c.patient.patientId)) || c.discharged) return;
 pickInj(c, today.details[i], date, NEXT, '내일', false).forEach((r) => rows.push({ ...r, predicted: true }));
@@ -420,7 +433,9 @@ const toHtml = (s) => esc(s)
 .split(E0).join('<strong style="font-weight:800;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px">')
 .split(E1).join('</strong>')
 .split(O0).join('<span style="color:#c2410c;font-weight:700">').split(O1).join('</span>')
-.split(X0).join('<span style="color:#c2410c;font-weight:700;text-decoration:line-through;text-decoration-thickness:2px">').split(X1).join('</span>');
+.split(X0).join('<span style="color:#c2410c;font-weight:700;text-decoration:line-through;text-decoration-thickness:2px">').split(X1).join('</span>')
+.split(G0).join('<span style="display:inline-block;white-space:nowrap;padding:0 4px;border:1px solid #9ca3af;border-radius:3px;background:#f9fafb;color:#4b5563;font-weight:700">')
+.split(G1).join('</span>');
 const asText = (sections) => sections.map((s) =>
 s.heading + (s.reviewNote ? '\n' + s.reviewNote : '') + '\n' + s.groups.map((g) =>
 (g.title ? g.title + ' ' + g.cage + (g.status ? ' [' + g.status + ']' : '') + (g.updated ? ' [처치 업데이트]' : '') + '\n  ' : '  ') +
@@ -430,7 +445,8 @@ g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
 .split(U0).join('**__').split(U1).join('__**')
 .split(E0).join('**__').split(E1).join('__**')
 .split(O0).join('**').split(O1).join('**')
-.split(X0).join('~~').split(X1).join('~~');
+.split(X0).join('~~').split(X1).join('~~')
+.split(G0).join('[').split(G1).join(']');
 const render = (sections) => sections.map((s) =>
 '<h2 style="font-size:14px;margin:18px 0 8px;color:' + (s.warn ? '#b45309' : '#6b7280') + '">' + esc(s.heading) + '</h2>' +
 (s.groups.length ? s.groups.map((g) =>

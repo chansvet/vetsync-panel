@@ -45,19 +45,18 @@ const text = context.__test.asText(sections);
 
 assert.strictEqual(compared.changes, 5);
 assert.strictEqual((html.match(/처치 업데이트/g) || []).length, 2);
-assert.match(html, /쪼코 \(#12345 · 푸들\)/);
-assert.match(html, /A1 · 5\.2 kg/);
+assert.match(html, /쪼코 \(5\.2 kg · #12345 · 푸들\)/);
 assert.match(html, /background:#fef08a[^>]+>연장<\/span>/);
 assert.match(html, /SAM <span[^>]+>22mpk→20mpk<\/span> IV/);
 assert.match(html, /<span[^>]+>내일 9시<\/span>/);
-assert.match(html, /line-through[^>]+><u style="font-weight:800">내일 1시<\/u> 취소<\/span>/);
+assert.match(html, /line-through[^>]+><u style="font-weight:800">내일 1시<\/u><\/span>/);
 assert.match(html, /maro 1mpk <u style="font-weight:800">SC<\/u> \(21시\)/);
 assert.match(html, /<span[^>]+>B12 <u style="font-weight:800">IM<\/u> \(18시\)<\/span>/);
-assert.match(html, /퇴원환자 \(#12345 · 푸들\)/);
+assert.match(html, /퇴원환자 \(5\.2 kg · #12345 · 푸들\)/);
 assert.match(html, /text-decoration:line-through[^>]+>퇴원<\/span>/);
 assert.match(html, /line-through[^>]+>cefa 20mpk IV \(17시\)<\/span>/);
 assert.ok(!html.includes('>SAM</span>'));
-assert.ok(text.includes('쪼코 (#12345 · 푸들) A1 · 5.2 kg [연장]'));
+assert.ok(text.includes('쪼코 (5.2 kg · #12345 · 푸들) A1 [연장]'));
 assert.ok(text.includes('maro 1mpk **__SC__** (21시)'));
 assert.ok(text.includes('~~cefa 20mpk IV (17시)~~'));
 
@@ -93,8 +92,8 @@ assert.ok(inferredTid.includes('(<u style="font-weight:800">21시</u>, 내일 1�
 const cancelledLast = context.__test.toHtml(context.__test.rawItem(item('SAM', '22mpk', 'IV', [
   ['오늘', 17, 17], ['내일', 1, 101], ['내일', 9, 109, true],
 ], { frequency: 'TID' })));
-assert.match(cancelledLast, /line-through[^>]+>내일 9시 취소<\/span>/);
-assert.match(cancelledLast, /color:#c2410c[^>]+>\[마지막 시간 취소\]<\/span>/);
+assert.match(cancelledLast, /border:1px solid #9ca3af[^>]+>제외: 내일 9시<\/span>/);
+assert.doesNotMatch(cancelledLast, /line-through|마지막 시간 취소/);
 
 const activeSam = patient('취소변경', false, [item('SAM', '22mpk', 'IV', [
   ['오늘', 17, 17], ['내일', 1, 101], ['내일', 9, 109],
@@ -107,7 +106,9 @@ const cancelledChange = context.__test.compareSnapshot(
 );
 assert.strictEqual(cancelledChange.changes, 1);
 assert.strictEqual(cancelledChange.normal[0].updated, true);
-assert.match(context.__test.render([{ heading: '주사', groups: cancelledChange.normal }]), /내일 9시 취소/);
+const cancelledChangeHtml = context.__test.render([{ heading: '주사', groups: cancelledChange.normal }]);
+assert.match(cancelledChangeHtml, /제외: 내일 9시/);
+assert.doesNotMatch(cancelledChangeHtml, /내일 9시<\/u> 취소|마지막 시간 취소/);
 
 const reviewText = context.__test.asText([{ heading: '주사', reviewNote: '이전 확인 15:03 → 현재 확인 16:12', groups: [] }]);
 assert.ok(reviewText.includes('이전 확인 15:03 → 현재 확인 16:12'));
