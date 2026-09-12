@@ -5,7 +5,7 @@ const vm = require('vm');
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.replace(
   "  if (!location.hostname.endsWith('vetsync4.vetu1.com')) {\n    alert('VetSync 화면에서 눌러주세요.');\n  } else if (window.__VETSYNC_BUTTON) {\n    mountButton();\n    // 화면이 다시 그려지면서 버튼이 사라질 수 있으므로 주기적으로 확인한다\n    setInterval(mountButton, 3000);\n  } else {\n    open();\n  }",
-  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, pickInj, checkedTime };'
+  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, cache, pickInj, checkedTime };'
 );
 const context = {};
 vm.createContext(context);
@@ -66,6 +66,20 @@ assert.ok(text.includes('maro 1mpk **__SC__** (21시)'));
 assert.ok(text.includes('**[추가]** B12'));
 assert.ok(text.includes('**[삭제]** ~~cefa'));
 assert.ok(text.includes('~~cefa 20mpk IV (17시)~~'));
+
+const oldWeight = patient('체중변경', false, [item('SAM', '22mpk', 'IV', [['오늘', 17, 17]])]);
+oldWeight.weight = '4.8 kg';
+const newWeight = patient('체중변경', false, [item('SAM', '22mpk', 'IV', [['오늘', 17, 17]])]);
+newWeight.weight = '5.15 kg';
+const weightChange = context.__test.compareSnapshot(
+  { patients: { weight: newWeight } }, { patients: { weight: oldWeight } }, {}
+);
+assert.strictEqual(weightChange.changes, 1);
+assert.strictEqual(weightChange.changeKinds.changed, 1);
+assert.strictEqual(weightChange.normal[0].previousWeight, '4.8 kg');
+const weightChangeSections = [{ heading: '주사', groups: weightChange.normal }];
+assert.match(context.__test.render(weightChangeSections), /4\.8 kg<\/span>→<span[^>]+>5\.15 kg<\/span>/);
+assert.ok(context.__test.asText(weightChangeSections).includes('[체중 4.8 kg→5.15 kg]'));
 
 const unchanged = context.__test.compareSnapshot(current, JSON.parse(JSON.stringify(current)), states);
 assert.strictEqual(unchanged.changes, 0);
@@ -149,6 +163,10 @@ const weightDetail = { sections: [{ rows: [{
 const weightChart = { patient: {} };
 assert.strictEqual(context.__test.latestWeight(weightDetail, weightChart), '5.15 kg');
 assert.strictEqual(context.__test.latestWeight({ sections: [] }, weightChart), '- kg');
+context.__test.cache['2026-09-11'] = {
+  charts: [{ patient: { patientId: 'previous-weight', weight: 4.8 } }],
+  details: [weightDetail],
+};
 
 const skippedChart = {
   discharged: false, cageLabel: 'A장-1',
@@ -191,4 +209,7 @@ assert.deepStrictEqual(
   ['나', '바', '가', '라', '마', '다']
 );
 
-console.log('VetSync 변경 비교 테스트 통과');
+context.__test.yesterdayWeights('2026-09-12', ['previous-weight']).then((weights) => {
+  assert.strictEqual(weights.get('previous-weight'), '5.15 kg');
+  console.log('VetSync 변경 비교 테스트 통과');
+});

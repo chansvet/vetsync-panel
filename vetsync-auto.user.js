@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      1.0.20
+// @version      1.0.21
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -123,6 +123,29 @@
     ];
     return candidates.map(weightValue).find(Boolean) || '- kg';
     };
+    const yesterdayWeights = async (date, patientIds) => {
+    const wanted = new Set(patientIds);
+    if (!wanted.size) return new Map();
+    const previousDate = shift(date, -1);
+    let charts, details;
+    if (cache[previousDate]) {
+    const cached = cache[previousDate];
+    const indices = cached.charts.map((chart, i) => wanted.has(String(chart.patient.patientId)) ? i : -1)
+    .filter((i) => i >= 0);
+    charts = indices.map((i) => cached.charts[i]);
+    details = indices.map((i) => cached.details[i]);
+    } else {
+    const list = await get('/charts?date=' + previousDate);
+    charts = list.items.filter((chart) => wanted.has(String(chart.patient.patientId)));
+    details = await Promise.all(charts.map((chart) => get('/charts/' + chart.chartId)));
+    }
+    const weights = new Map();
+    charts.forEach((chart, i) => {
+    const weight = latestWeight(details[i], chart);
+    if (weight !== '- kg') weights.set(String(chart.patient.patientId), weight);
+    });
+    return weights;
+    };
     const noteOf = (row) => {
     if (row.instructionText) return row.instructionText.trim();
     const parts = row.displayName.split(/[,()[\]{}]/).map((s) => s.trim()).filter(Boolean);
@@ -223,9 +246,9 @@
     const parts = name.split(/,\s*/).map((s) => s.trim()).filter(Boolean);
     return parts.length > 1 && parts.every((p) => ROUTE.test(p) || KNOWN.test(p)) ? parts : [name];
     };
-    function pickInj(chart, detail, date, hours, tag, includeCancelled = true) {
+    function pickInj(chart, detail, date, hours, tag, includeCancelled = true, selectedWeight = '') {
     const out = [];
-    const weight = latestWeight(detail, chart);
+    const weight = selectedWeight || latestWeight(detail, chart);
     treatRows(detail).forEach((row) => {
     const name = (row.displayName || '').trim();
     if (!isInjection(name)) return;
@@ -365,11 +388,14 @@
     const state = states[pid] || {};
     const extended = !!(old && old.predicted && !now?.predicted && state.extended);
     const discharged = !!(!now && old && state.discharged);
+    const weightChanged = !!(now && old && now.weight && old.weight &&
+    now.weight !== '- kg' && old.weight !== '- kg' && now.weight !== old.weight);
     const title = patientTitle(p.name, p.code, p.breed, p.weight || '- kg');
     let status = '';
     if (now?.predicted) status = '미연장';
     else if (extended) { status = '연장'; events += 1; patientKinds.status = true; }
     else if (discharged) { status = '퇴원'; events += 1; patientKinds.status = true; }
+    if (weightChanged) { events += 1; patientKinds.changed = true; }
     const currentItems = now ? now.items : [];
     const oldItems = old ? old.items : [];
     const used = new Set();
@@ -404,12 +430,12 @@
     }
     if (lines.length) normal.push({
     updated,
-    title, cage: p.cage, status,
+    title, weight: p.weight, previousWeight: weightChanged ? old.weight : '', cage: p.cage, status,
     sortName: p.name, sortCage: p.cage, body: lines, note: '',
     });
     if (conds.length) cond.push({
     updated: updated && !lines.length,
-    title, cage: p.cage, status,
+    title, weight: p.weight, previousWeight: weightChanged ? old.weight : '', cage: p.cage, status,
     sortName: p.name, sortCage: p.cage, body: conds, note: '',
     });
     });
@@ -433,6 +459,18 @@
     const next = shift(date, 1);
     const today = await collect(date, force);
     const tomorrow = await collect(next, force);
+    const weightByPatient = new Map();
+    const todayPatientIds = new Set(today.charts.map((chart) => String(chart.patient.patientId)));
+    const rememberWeight = (chart, detail) => {
+    const weight = latestWeight(detail, chart);
+    if (weight !== '- kg') weightByPatient.set(String(chart.patient.patientId), weight);
+    };
+    today.charts.forEach((chart, i) => rememberWeight(chart, today.details[i]));
+    const allPatientIds = new Set([...todayPatientIds, ...tomorrow.charts.map((chart) => String(chart.patient.patientId))]);
+    const missingWeightIds = [...allPatientIds].filter((pid) => !weightByPatient.has(pid));
+    const yesterday = await yesterdayWeights(date, missingWeightIds);
+    yesterday.forEach((weight, pid) => weightByPatient.set(pid, weight));
+    const weightFor = (chart) => weightByPatient.get(String(chart.patient.patientId)) || '- kg';
     const rows = [];
     const states = {};
     today.charts.forEach((c) => {
@@ -440,7 +478,7 @@
     });
     const discharged = new Set(today.charts.filter((c) => c.discharged).map((c) => String(c.patient.patientId)));
     today.charts.forEach((c, i) => {
-    if (!c.discharged) rows.push(...pickInj(c, today.details[i], date, EVENING, '오늘'));
+    if (!c.discharged) rows.push(...pickInj(c, today.details[i], date, EVENING, '오늘', true, weightFor(c)));
     });
     const extended = new Set(tomorrow.charts
     .filter((c) => !c.discharged && !discharged.has(String(c.patient.patientId)))
@@ -451,12 +489,13 @@
     });
     tomorrow.charts.forEach((c, i) => {
     if (!c.discharged && !discharged.has(String(c.patient.patientId))) {
-    rows.push(...pickInj(c, tomorrow.details[i], next, NEXT, '내일'));
+    rows.push(...pickInj(c, tomorrow.details[i], next, NEXT, '내일', true, weightFor(c)));
     }
     });
     today.charts.forEach((c, i) => {
     if (extended.has(String(c.patient.patientId)) || c.discharged) return;
-    pickInj(c, today.details[i], date, NEXT, '내일', false).forEach((r) => rows.push({ ...r, predicted: true }));
+    pickInj(c, today.details[i], date, NEXT, '내일', false, weightFor(c))
+    .forEach((r) => rows.push({ ...r, predicted: true }));
     });
     const snapshot = makeSnapshot(rows);
     let previous = loadBaseline(date);
@@ -489,7 +528,8 @@
     .split(B0).join('<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">').split(B1).join('</span>');
     const asText = (sections) => sections.map((s) =>
     s.heading + (s.reviewNote ? '\n' + s.reviewNote : '') + '\n' + s.groups.map((g) =>
-    (g.title ? g.title + ' ' + g.cage + (g.status ? ' [' + g.status + ']' : '') + (g.updated ? ' [처치 업데이트]' : '') + '\n  ' : '  ') +
+    (g.title ? g.title + ' ' + g.cage + (g.previousWeight ? ' [체중 ' + g.previousWeight + '→' + g.weight + ']' : '') +
+    (g.status ? ' [' + g.status + ']' : '') + (g.updated ? ' [처치 업데이트]' : '') + '\n  ' : '  ') +
     g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
     ).join('\n')
     ).join('\n\n')
@@ -501,7 +541,7 @@
     .split(A0).join('**[').split(A1).join(']**')
     .split(D0).join('**[').split(D1).join(']**')
     .split(B0).join('~~').split(B1).join('~~');
-    const patientTitleHtml = (title) => {
+    const patientTitleHtml = (title, previousWeight = '') => {
     const value = String(title || '');
     const split = value.lastIndexOf(' (');
     if (split < 0 || !value.endsWith(')')) return esc(value);
@@ -509,8 +549,13 @@
     const info = value.slice(split + 2, -1).split(' · ');
     const weight = /^(?:- |\d+(?:\.\d+)? )kg$/i.test(info[0] || '') ? info.shift() : '';
     const meta = info.join(' · ');
+    const weightChanged = previousWeight && previousWeight !== '- kg' && previousWeight !== weight;
+    const weightHtml = weightChanged ?
+    '<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">' + esc(previousWeight) + '</span>→' +
+    '<span style="color:#b45309;font-size:15px;font-weight:800">' + esc(weight) + '</span>' :
+    '<span style="color:#111827;font-size:15px;font-weight:800">' + esc(weight) + '</span>';
     return esc(name) + ' <span style="color:#64748b;font-size:14px;font-weight:500">(' +
-    (weight ? '<span style="color:#111827;font-size:15px;font-weight:800">' + esc(weight) + '</span>' : '') +
+    (weight ? weightHtml : '') +
     (weight && meta ? ' · ' : '') + (meta ? esc(meta) : '') + ')</span>';
     };
     const render = (sections) => sections.map((s) =>
@@ -518,7 +563,7 @@
     (s.groups.length ? s.groups.map((g) =>
     '<div style="padding:12px 0 13px;border-bottom:1px solid #cbd5e1;' +
     (g.updated ? 'border-left:3px solid #64748b;padding-left:10px;' : '') + '">' +
-    (g.title ? '<div style="font-weight:700;font-size:16px;line-height:1.45">' + patientTitleHtml(g.title) +
+    (g.title ? '<div style="font-weight:700;font-size:16px;line-height:1.45">' + patientTitleHtml(g.title, g.previousWeight) +
     ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span>' +
     (g.status ? ' <span style="display:inline-block;white-space:nowrap;padding:0 5px;border-radius:3px;font-size:13px;font-weight:800;' +
     (g.status === '연장' ? 'background:#fef08a;color:#713f12' :
