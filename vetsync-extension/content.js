@@ -23,6 +23,7 @@ const NOTINJ = /드레싱|소독|사진|방사선|초음파|혈검|혈액검사|
 const CRI = /\bcri\b|\/\s*hr\b|시간당/i;
 const COND = /필요시|prn|경우\s*x|없을\s*경우|이면|이하시|이상시|시\s*연결|시\s*중단|보류/i;
 const ROUTINE = [17, 21, 1, 9];
+const ROUTINE_BY_FREQUENCY = { BID: [21, 9], TID: [17, 1, 9] };
 const U0 = '\u0001', U1 = '\u0002';
 const E0 = '\u0003', E1 = '\u0004';
 const O0 = '\u0005', O1 = '\u0006';
@@ -75,6 +76,17 @@ const parts = row.displayName.split(/[,()[\]{}]/).map((s) => s.trim()).filter(Bo
 const hits = parts.filter((p) => HANDLING.test(p));
 return hits.length ? hits.join(', ') : '';
 };
+const breedOf = (patient) => {
+const breed = patient.breedName || patient.breedLabel || patient.breedDisplayName ||
+patient.speciesBreed || patient.breed;
+return typeof breed === 'object' ? (breed.name || breed.label || breed.displayName || '품종 미상') :
+(breed || '품종 미상');
+};
+const patientTitle = (name, code, breed) => {
+const patientCode = code ? (String(code).startsWith('#') ? String(code) : '#' + code) : '';
+const info = [patientCode, breed].filter(Boolean).join(' · ');
+return name + (info ? ' (' + info + ')' : '');
+};
 async function bloodwork(date) {
 const { charts, details } = await collect(date);
 const rows = [];
@@ -93,7 +105,7 @@ const temp = hasE ? latestTemp(detail) : null;
 if (hasE && !temp) needPrev = true;
 const species = { DOG: '강아지', CAT: '고양이' }[chart.patient.species] || chart.patient.species;
 rows.push({
-title: chart.patient.name + ' (#' + chart.patient.hospitalPatientCode + ')',
+title: patientTitle(chart.patient.name, chart.patient.hospitalPatientCode, breedOf(chart.patient)),
 cage: species + ' · ' + (chart.cageLabel || '미지정'),
 body: [labs.map((r) => r.displayName.trim()).join(' / ')],
 note: [labs.map(noteOf).filter(Boolean).join(' / '), temp ? '체온 ' + temp.v : ''].filter(Boolean).join(' / '),
@@ -122,6 +134,8 @@ return ROUTE.test(n) || KNOWN.test(n);
 function parseDrug(name) {
 let s = (name || '').trim();
 const notes = [];
+const frequencyMatch = s.match(/\b(sid|bid|tid|qid)\b/i);
+const frequency = frequencyMatch ? frequencyMatch[1].toUpperCase() : '';
 s = s.replace(/(\d+(?:\.\d+)?\s*\S*)\s*(?:->|→)\s*(\d)/g, '$2').replace(/\(\s*(\d+(?:\.\d+)?)\s*\)/g, ' $1 ');
 const pull = (re) => {
 const m = s.match(re);
@@ -139,7 +153,7 @@ else {
 const b = s.match(/(?:^|\s)(\d+(?:\.\d+)?)(?=\s|$)/);
 if (b) { dose = b[1]; s = s.replace(b[0], ' '); }
 }
-return { drug: s.replace(/\s+/g, ' ').trim().replace(/[,\-]+$/, ''), dose, route, note: notes.filter(Boolean).join(', ') };
+return { drug: s.replace(/\s+/g, ' ').trim().replace(/[,\-]+$/, ''), dose, route, frequency, note: notes.filter(Boolean).join(', ') };
 }
 const splitDrugs = (name) => {
 if (!name.includes(',')) return [name];
@@ -152,37 +166,52 @@ treatRows(detail).forEach((row) => {
 const name = (row.displayName || '').trim();
 if (!isInjection(name)) return;
 const parts = splitDrugs(name);
+const rowFrequency = parseDrug(name).frequency;
 (row.cells || []).forEach((cell) => {
 if (!hours.includes(cell.hourSlot) || !LIVE.includes(cell.status)) return;
 if (!admitted(chart, detail, date, cell.hourSlot)) return;
-parts.forEach((p, i) => out.push({
+parts.forEach((p, i) => {
+const parsed = parseDrug(p);
+out.push({
 pid: String(chart.patient.patientId), patient: chart.patient.name, code: chart.patient.hospitalPatientCode,
+breed: breedOf(chart.patient),
 cage: chart.cageLabel || '미지정', tag, hour: cell.hourSlot,
 order: (tag === '내일' ? 100 : 0) + cell.hourSlot,
-key: name + '#' + i, raw: name, instruction: row.instructionText || '', ...parseDrug(p),
-}));
+key: name + '#' + i, raw: name, instruction: row.instructionText || '', ...parsed,
+frequency: parsed.frequency || rowFrequency,
+});
+});
 });
 });
 return out;
 }
 const normDrug = (s) => String(s || '').toLowerCase().replace(/[\s,._-]+/g, '');
 const timeKey = (t) => t.tag + '|' + t.hour;
-const timeLabel = (t) => {
+const frequencyOf = (item) => {
+if (item && item.frequency) return item.frequency;
+const match = String(item && item.note || '').match(/\b(sid|bid|tid|qid)\b/i);
+return match ? match[1].toUpperCase() : '';
+};
+const timeLabel = (t, item) => {
 const label = (t.tag === '내일' ? '내일 ' : '') + t.hour + '시';
-return ROUTINE.includes(t.hour) ? label : U0 + label + U1;
+const frequency = frequencyOf(item);
+if (frequency === 'SID') return label;
+const expected = ROUTINE_BY_FREQUENCY[frequency] || ROUTINE;
+return expected.includes(t.hour) ? label : U0 + label + U1;
 };
 const orange = (s) => O0 + s + O1;
 const cancelled = (s) => X0 + s + X1;
+const routeLabel = (route) => /^(SC|IM)$/.test(route) ? U0 + route + U1 : route;
 function makeSnapshot(rows) {
 const patients = {};
 rows.forEach((r) => {
 const p = patients[r.pid] = patients[r.pid] || {
-pid: r.pid, name: r.patient, code: r.code, cage: r.cage, predicted: false, items: {},
+pid: r.pid, name: r.patient, code: r.code, breed: r.breed, cage: r.cage, predicted: false, items: {},
 };
 if (r.cage !== '미지정') p.cage = r.cage;
 if (r.predicted) p.predicted = true;
 const item = p.items[r.key] = p.items[r.key] || {
-match: normDrug(r.drug) || normDrug(r.raw), drug: r.drug, dose: r.dose, route: r.route,
+match: normDrug(r.drug) || normDrug(r.raw), drug: r.drug, dose: r.dose, route: r.route, frequency: r.frequency,
 note: r.note, instruction: r.instruction, conditional: COND.test(r.raw + ' ' + r.instruction), times: [],
 };
 if (!item.times.some((t) => timeKey(t) === timeKey(r))) {
@@ -197,9 +226,9 @@ p.items = Object.values(p.items).map((item) => ({
 return { patients };
 }
 const rawItem = (item) => {
-const label = [item.drug, item.dose, item.route].filter(Boolean).join(' ');
+const label = [item.drug, item.dose, routeLabel(item.route)].filter(Boolean).join(' ');
 const extra = [item.note, item.instruction].filter(Boolean).join(', ');
-return label + ' (' + item.times.map(timeLabel).join(', ') + ')' + (extra ? ' [' + extra + ']' : '');
+return label + ' (' + item.times.map((t) => timeLabel(t, item)).join(', ') + ')' + (extra ? ' [' + extra + ']' : '');
 };
 function changedItem(item, prev, kind) {
 let text;
@@ -207,21 +236,23 @@ if (kind === 'added') text = orange(rawItem(item));
 else if (kind === 'removed') text = cancelled(rawItem(item));
 else {
 const field = (now, before) => now === before ? now : orange([before, now].filter(Boolean).join('→'));
-const label = [field(item.drug, prev.drug), field(item.dose, prev.dose), field(item.route, prev.route)]
+const route = item.route === prev.route ? routeLabel(item.route) :
+orange([routeLabel(prev.route), routeLabel(item.route)].filter(Boolean).join('→'));
+const label = [field(item.drug, prev.drug), field(item.dose, prev.dose), route]
 .filter(Boolean).join(' ');
 const nowTimes = new Set(item.times.map(timeKey));
 const oldTimes = new Set(prev.times.map(timeKey));
-const times = item.times.map((t) => oldTimes.has(timeKey(t)) ? timeLabel(t) : orange(timeLabel(t)));
-prev.times.forEach((t) => { if (!nowTimes.has(timeKey(t))) times.push(cancelled(timeLabel(t))); });
+const times = item.times.map((t) => oldTimes.has(timeKey(t)) ? timeLabel(t, item) : orange(timeLabel(t, item)));
+prev.times.forEach((t) => { if (!nowTimes.has(timeKey(t))) times.push(cancelled(timeLabel(t, prev))); });
 const extraNow = [item.note, item.instruction].filter(Boolean).join(', ');
 const extraOld = [prev.note, prev.instruction].filter(Boolean).join(', ');
 const extra = extraNow === extraOld ? extraNow : orange([extraOld, extraNow].filter(Boolean).join('→'));
 text = label + ' (' + times.join(', ') + ')' + (extra ? ' [' + extra + ']' : '');
 }
-if (/^(SC|IM)$/.test(item.route)) text = E0 + text + E1;
 return text;
 }
 const sameItem = (a, b) => a.drug === b.drug && a.dose === b.dose && a.route === b.route &&
+frequencyOf(a) === frequencyOf(b) &&
 a.note === b.note && a.instruction === b.instruction &&
 a.times.map(timeKey).join(',') === b.times.map(timeKey).join(',');
 function compareSnapshot(current, previous, states) {
@@ -235,10 +266,11 @@ const p = now || old;
 const state = states[pid] || {};
 const extended = !!(old && old.predicted && !now?.predicted && state.extended);
 const discharged = !!(!now && old && state.discharged);
-let title = p.name;
-if (now?.predicted) title += '(미연장)';
-else if (extended) { title += '(' + orange('연장') + ')'; changes += 1; }
-else if (discharged) { title += '(' + orange('퇴원') + ')'; changes += 1; }
+const title = patientTitle(p.name, p.code, p.breed);
+let status = '';
+if (now?.predicted) status = '미연장';
+else if (extended) { status = '연장'; changes += 1; }
+else if (discharged) { status = '퇴원'; changes += 1; }
 const currentItems = now ? now.items : [];
 const oldItems = old ? old.items : [];
 const used = new Set();
@@ -259,8 +291,8 @@ changes += 1;
 const line = changedItem(item, null, 'removed');
 (item.conditional ? conds : lines).push(line);
 });
-if (lines.length) normal.push({ title, cage: p.cage, body: lines, note: '' });
-cond.push(...conds.map((line) => title + ' · ' + line));
+if (lines.length) normal.push({ title, cage: p.cage, status, body: lines, note: '' });
+cond.push(...conds.map((line) => title + (status ? ' [' + status + ']' : '') + ' · ' + line));
 });
 return { normal, cond, changes };
 }
@@ -313,7 +345,8 @@ const toHtml = (s) => esc(s)
 .split(X0).join('<span style="color:#c2410c;font-weight:700;text-decoration:line-through;text-decoration-thickness:2px">').split(X1).join('</span>');
 const asText = (sections) => sections.map((s) =>
 s.heading + '\n' + s.groups.map((g) =>
-(g.title ? g.title + ' ' + g.cage + '\n  ' : '  ') + g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
+(g.title ? g.title + ' ' + g.cage + (g.status ? '\n  [' + g.status + ']' : '') + '\n  ' : '  ') +
+g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
 ).join('\n')
 ).join('\n\n')
 .split(U0).join('_').split(U1).join('_')
@@ -326,6 +359,10 @@ const render = (sections) => sections.map((s) =>
 '<div style="padding:11px 0;border-bottom:1px solid #e5e7eb">' +
 (g.title ? '<div style="font-weight:700;font-size:16px">' + toHtml(g.title) +
 ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span></div>' : '') +
+(g.status ? '<div style="margin:6px 0 5px"><span style="display:inline-block;padding:2px 7px;border-radius:3px;font-weight:800;' +
+(g.status === '연장' ? 'background:#fef08a;color:#713f12' :
+g.status === '미연장' ? 'background:#ffedd5;color:#9a3412;border-left:3px solid #f97316' :
+'background:#ffedd5;color:#c2410c;text-decoration:line-through') + '">' + esc(g.status) + '</span></div>' : '') +
 g.body.map((b) => '<div style="margin-top:3px">' + toHtml(b) + '</div>').join('') +
 (g.note ? '<div style="margin-top:3px;color:#b45309;font-weight:600">' + esc(g.note) + '</div>' : '') +
 '</div>').join('') : '<p style="color:#6b7280">해당 항목이 없습니다.</p>')
