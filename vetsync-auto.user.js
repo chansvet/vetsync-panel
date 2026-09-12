@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      1.0.12
+// @version      1.0.13
 // @description  Safari 전용 주소로 VetSync를 열면 채혈·주사 패널을 자동으로 표시합니다. 실험적 기능입니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -394,18 +394,18 @@
     }
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     const toHtml = (s) => esc(s)
-    .split(U0).join('<u>').split(U1).join('</u>')
+    .split(U0).join('<u style="font-weight:800">').split(U1).join('</u>')
     .split(E0).join('<strong style="font-weight:800;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px">')
     .split(E1).join('</strong>')
     .split(O0).join('<span style="color:#c2410c;font-weight:700">').split(O1).join('</span>')
     .split(X0).join('<span style="color:#c2410c;font-weight:700;text-decoration:line-through;text-decoration-thickness:2px">').split(X1).join('</span>');
     const asText = (sections) => sections.map((s) =>
     s.heading + '\n' + s.groups.map((g) =>
-    (g.title ? g.title + ' ' + g.cage + (g.status ? '\n  [' + g.status + ']' : '') + '\n  ' : '  ') +
+    (g.title ? g.title + ' ' + g.cage + (g.status ? ' [' + g.status + ']' : '') + '\n  ' : '  ') +
     g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
     ).join('\n')
     ).join('\n\n')
-    .split(U0).join('_').split(U1).join('_')
+    .split(U0).join('**__').split(U1).join('__**')
     .split(E0).join('**__').split(E1).join('__**')
     .split(O0).join('**').split(O1).join('**')
     .split(X0).join('~~').split(X1).join('~~');
@@ -414,11 +414,11 @@
     (s.groups.length ? s.groups.map((g) =>
     '<div style="padding:11px 0;border-bottom:1px solid #e5e7eb">' +
     (g.title ? '<div style="font-weight:700;font-size:16px">' + toHtml(g.title) +
-    ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span></div>' : '') +
-    (g.status ? '<div style="margin:6px 0 5px"><span style="display:inline-block;padding:2px 7px;border-radius:3px;font-weight:800;' +
+    ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span>' +
+    (g.status ? ' <span style="display:inline-block;white-space:nowrap;padding:0 5px;border-radius:3px;font-size:13px;font-weight:800;' +
     (g.status === '연장' ? 'background:#fef08a;color:#713f12' :
     g.status === '미연장' ? 'background:#ffedd5;color:#9a3412;border-left:3px solid #f97316' :
-    'background:#ffedd5;color:#c2410c;text-decoration:line-through') + '">' + esc(g.status) + '</span></div>' : '') +
+    'background:#ffedd5;color:#c2410c;text-decoration:line-through') + '">' + esc(g.status) + '</span>' : '') + '</div>' : '') +
     g.body.map((b) => '<div style="margin-top:3px">' + toHtml(b) + '</div>').join('') +
     (g.note ? '<div style="margin-top:3px;color:#b45309;font-weight:600">' + esc(g.note) + '</div>' : '') +
     '</div>').join('') : '<p style="color:#6b7280">해당 항목이 없습니다.</p>')

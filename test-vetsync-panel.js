@@ -48,15 +48,15 @@ assert.match(html, /쪼코 \(#12345 · 푸들\)/);
 assert.match(html, /background:#fef08a[^>]+>연장<\/span>/);
 assert.match(html, /SAM <span[^>]+>22mpk→20mpk<\/span> IV/);
 assert.match(html, /<span[^>]+>내일 9시<\/span>/);
-assert.match(html, /line-through[^>]+><u>내일 1시<\/u><\/span>/);
-assert.match(html, /maro 1mpk <u>SC<\/u> \(21시\)/);
-assert.match(html, /<span[^>]+>B12 <u>IM<\/u> \(18시\)<\/span>/);
+assert.match(html, /line-through[^>]+><u style="font-weight:800">내일 1시<\/u><\/span>/);
+assert.match(html, /maro 1mpk <u style="font-weight:800">SC<\/u> \(21시\)/);
+assert.match(html, /<span[^>]+>B12 <u style="font-weight:800">IM<\/u> \(18시\)<\/span>/);
 assert.match(html, /퇴원환자 \(#12345 · 푸들\)/);
 assert.match(html, /text-decoration:line-through[^>]+>퇴원<\/span>/);
 assert.match(html, /line-through[^>]+>cefa 20mpk IV \(17시\)<\/span>/);
 assert.ok(!html.includes('>SAM</span>'));
-assert.ok(text.includes('쪼코 (#12345 · 푸들) A1\n  [연장]'));
-assert.ok(text.includes('maro 1mpk _SC_ (21시)'));
+assert.ok(text.includes('쪼코 (#12345 · 푸들) A1 [연장]'));
+assert.ok(text.includes('maro 1mpk **__SC__** (21시)'));
 assert.ok(text.includes('~~cefa 20mpk IV (17시)~~'));
 
 const unchanged = context.__test.compareSnapshot(current, JSON.parse(JSON.stringify(current)), states);
@@ -65,8 +65,8 @@ assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal 
 
 const today = (hour) => [['오늘', hour, hour]];
 const routeHtml = context.__test.toHtml(context.__test.rawItem(item('maro', '1mpk', 'SC', today(21))));
-assert.match(routeHtml, /^maro 1mpk <u>SC<\/u> \(21시\)$/);
-assert.ok(!routeHtml.startsWith('<u>'));
+assert.match(routeHtml, /^maro 1mpk <u style="font-weight:800">SC<\/u> \(21시\)$/);
+assert.ok(!routeHtml.startsWith('<u style="font-weight:800">'));
 
 const bidNormal = context.__test.toHtml(context.__test.rawItem(item('cefa', '20mpk', 'IV', today(21), { frequency: 'BID' })));
 const bidChanged = context.__test.toHtml(context.__test.rawItem(item('cefa', '20mpk', 'IV', today(17), { frequency: 'BID' })));
@@ -79,13 +79,13 @@ const inferredTid = context.__test.toHtml(context.__test.rawItem(item('SAM', '20
   ['오늘', 21, 21], ['내일', 1, 101], ['내일', 9, 109],
 ])));
 assert.ok(bidNormal.includes('(21시)'));
-assert.ok(!bidNormal.includes('<u>'));
-assert.ok(bidChanged.includes('(<u>17시</u>)'));
-assert.ok(tidChanged.includes('(<u>21시</u>)'));
+assert.ok(!bidNormal.includes('<u style="font-weight:800">'));
+assert.ok(bidChanged.includes('(<u style="font-weight:800">17시</u>)'));
+assert.ok(tidChanged.includes('(<u style="font-weight:800">21시</u>)'));
 assert.ok(sidVariable.includes('(18시)'));
-assert.ok(!sidVariable.includes('(<u>18시</u>)'));
-assert.ok(inferredBid.includes('(<u>17시</u>, 내일 9시)'));
-assert.ok(inferredTid.includes('(<u>21시</u>, 내일 1시, 내일 9시)'));
+assert.ok(!sidVariable.includes('(<u style="font-weight:800">18시</u>)'));
+assert.ok(inferredBid.includes('(<u style="font-weight:800">17시</u>, 내일 9시)'));
+assert.ok(inferredTid.includes('(<u style="font-weight:800">21시</u>, 내일 1시, 내일 9시)'));
 
 const currentBid = patient('기존기록', false, [item('cefa', '20mpk', 'IV', today(21), { frequency: 'BID', note: 'BID' })]);
 const legacyBid = JSON.parse(JSON.stringify(currentBid));
