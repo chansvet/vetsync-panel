@@ -34,11 +34,12 @@ assert.strictEqual(sessionA.getItem('vetsync-panel-auto-open'), '1');
 assert.ok(Number(sessionA.getItem('vetsync-panel-auto-open-at')) > 0);
 assert.strictEqual(timers.length, 1);
 
-assert.match(source, /@version\s+1\.0\.13/);
+assert.match(source, /@version\s+1\.0\.14/);
 assert.match(source, /@inject-into\s+auto/);
 assert.doesNotMatch(source, /@weight/);
 assert.doesNotMatch(source, /vsp-launcher/);
-assert.match(source, /MONITOR_INTERVAL\s*=\s*3\s*\*\s*60\s*\*\s*1000/);
-assert.match(source, /주사 처치 변경/);
+assert.doesNotMatch(source, /MONITOR_INTERVAL|Notification|pollChanges/);
+assert.match(source, /새로 확인/);
+assert.match(source, /처치 업데이트/);
 
 console.log('VetSync 자동실행 복구 테스트 통과');

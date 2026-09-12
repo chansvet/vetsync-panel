@@ -44,6 +44,7 @@ const html = context.__test.render(sections);
 const text = context.__test.asText(sections);
 
 assert.strictEqual(compared.changes, 5);
+assert.strictEqual((html.match(/처치 업데이트/g) || []).length, 2);
 assert.match(html, /쪼코 \(#12345 · 푸들\)/);
 assert.match(html, /background:#fef08a[^>]+>연장<\/span>/);
 assert.match(html, /SAM <span[^>]+>22mpk→20mpk<\/span> IV/);
@@ -61,6 +62,7 @@ assert.ok(text.includes('~~cefa 20mpk IV (17시)~~'));
 
 const unchanged = context.__test.compareSnapshot(current, JSON.parse(JSON.stringify(current)), states);
 assert.strictEqual(unchanged.changes, 0);
+assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal }]).includes('처치 업데이트'));
 assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal }]).includes('color:#c2410c'));
 
 const today = (hour) => [['오늘', hour, hour]];
