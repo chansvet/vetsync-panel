@@ -5,7 +5,7 @@ const vm = require('vm');
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.replace(
   "  if (!location.hostname.endsWith('vetsync4.vetu1.com')) {\n    alert('VetSync 화면에서 눌러주세요.');\n  } else if (window.__VETSYNC_BUTTON) {\n    mountButton();\n    // 화면이 다시 그려지면서 버튼이 사라질 수 있으므로 주기적으로 확인한다\n    setInterval(mountButton, 3000);\n  } else {\n    open();\n  }",
-  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, sortSections, latestWeight, pickInj, checkedTime };'
+  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, pickInj, checkedTime };'
 );
 const context = {};
 vm.createContext(context);
@@ -44,26 +44,37 @@ const html = context.__test.render(sections);
 const text = context.__test.asText(sections);
 
 assert.strictEqual(compared.changes, 5);
+assert.deepStrictEqual({ ...compared.changeKinds }, { added: 1, changed: 1, removed: 1, status: 2 });
 assert.strictEqual((html.match(/처치 업데이트/g) || []).length, 2);
-assert.match(html, /쪼코 \(5\.2 kg · #12345 · 푸들\)/);
+assert.match(html, /쪼코 .*5\.2 kg.*#12345 · 푸들/);
 assert.match(html, /background:#fef08a[^>]+>연장<\/span>/);
-assert.match(html, /SAM <span[^>]+>22mpk→20mpk<\/span> IV/);
+assert.match(html, /SAM <span[^>]+>22mpk<\/span>→<span[^>]+>20mpk<\/span> IV/);
 assert.match(html, /<span[^>]+>내일 9시<\/span>/);
 assert.match(html, /line-through[^>]+><u style="font-weight:800">내일 1시<\/u><\/span>/);
 assert.match(html, /maro 1mpk <u style="font-weight:800">SC<\/u> \(21시\)/);
-assert.match(html, /<span[^>]+>B12 <u style="font-weight:800">IM<\/u> \(18시\)<\/span>/);
-assert.match(html, /퇴원환자 \(5\.2 kg · #12345 · 푸들\)/);
+assert.match(html, />추가<\/span> B12 <u style="font-weight:800">IM<\/u> \(18시\)/);
+assert.match(html, /퇴원환자 .*5\.2 kg.*#12345 · 푸들/);
 assert.match(html, /text-decoration:line-through[^>]+>퇴원<\/span>/);
 assert.match(html, /line-through[^>]+>cefa 20mpk IV \(17시\)<\/span>/);
+assert.match(html, />삭제<\/span> <span[^>]+line-through/);
+assert.match(html, /border-left:3px solid #64748b/);
 assert.ok(!html.includes('>SAM</span>'));
+assert.match(html, /background:#eff6ff;color:#1d4ed8/);
+assert.match(html, /background:#fef2f2;color:#b42318/);
 assert.ok(text.includes('쪼코 (5.2 kg · #12345 · 푸들) A1 [연장]'));
 assert.ok(text.includes('maro 1mpk **__SC__** (21시)'));
+assert.ok(text.includes('**[추가]** B12'));
+assert.ok(text.includes('**[삭제]** ~~cefa'));
 assert.ok(text.includes('~~cefa 20mpk IV (17시)~~'));
 
 const unchanged = context.__test.compareSnapshot(current, JSON.parse(JSON.stringify(current)), states);
 assert.strictEqual(unchanged.changes, 0);
 assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal }]).includes('처치 업데이트'));
 assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal }]).includes('color:#c2410c'));
+
+const bloodTitleHtml = context.__test.patientTitleHtml('솜이(오*호) (#12345 · 말티즈)');
+assert.match(bloodTitleHtml, /솜이\(오\*호\).*#12345 · 말티즈/);
+assert.doesNotMatch(bloodTitleHtml, /font-size:15px[^>]+>#12345/);
 
 const today = (hour) => [['오늘', hour, hour]];
 const routeHtml = context.__test.toHtml(context.__test.rawItem(item('maro', '1mpk', 'SC', today(21))));

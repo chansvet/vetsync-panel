@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      1.0.17
+// @version      1.0.18
 // @description  Safari 전용 주소로 VetSync를 열면 채혈·주사 패널을 자동으로 표시합니다. 실험적 기능입니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -68,6 +68,9 @@
     const O0 = '\u0005', O1 = '\u0006';
     const X0 = '\u0007', X1 = '\u0008';
     const G0 = '\u0009', G1 = '\u000B';
+    const A0 = '\uE000', A1 = '\uE001';
+    const D0 = '\uE002', D1 = '\uE003';
+    const B0 = '\uE004', B1 = '\uE005';
     const INJ_BASELINE = 'vetsync-injection-baseline-v1:';
     const pad = (n) => String(n).padStart(2, '0');
     const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -282,6 +285,9 @@
     };
     const orange = (s) => O0 + s + O1;
     const cancelled = (s) => X0 + s + X1;
+    const addedLabel = () => A0 + '추가' + A1;
+    const deletedLabel = () => D0 + '삭제' + D1;
+    const beforeValue = (s) => B0 + s + B1;
     const plainTimeLabel = (t) => (t.tag === '내일' ? '내일 ' : '') + t.hour + '시';
     const excluded = (times) => G0 + '제외: ' + times.map(plainTimeLabel).join(', ') + G1;
     const timeGroups = (active, skipped) => [active.join(', '), skipped.length ? excluded(skipped) : '']
@@ -321,12 +327,16 @@
     };
     function changedItem(item, prev, kind) {
     let text;
-    if (kind === 'added') text = orange(rawItem(item));
-    else if (kind === 'removed') text = cancelled(rawItem(item));
+    if (kind === 'added') text = addedLabel() + ' ' + rawItem(item);
+    else if (kind === 'removed') text = deletedLabel() + ' ' + cancelled(rawItem(item));
     else {
-    const field = (now, before) => now === before ? now : orange([before, now].filter(Boolean).join('→'));
+    const field = (now, before) => {
+    if (now === before) return now;
+    if (before && now) return beforeValue(before) + '→' + orange(now);
+    return now ? orange(now) : beforeValue(before);
+    };
     const route = item.route === prev.route ? routeLabel(item.route) :
-    orange([routeLabel(prev.route), routeLabel(item.route)].filter(Boolean).join('→'));
+    field(routeLabel(item.route), routeLabel(prev.route));
     const label = [field(item.drug, prev.drug), field(item.dose, prev.dose), route]
     .filter(Boolean).join(' ');
     const oldByTime = new Map(prev.times.map((t) => [timeKey(t), t]));
@@ -357,6 +367,7 @@
     function compareSnapshot(current, previous, states) {
     const normal = [], cond = [];
     let changes = 0;
+    const changeKinds = { added: 0, changed: 0, removed: 0, status: 0 };
     const ids = new Set([...Object.keys(current.patients), ...Object.keys(previous ? previous.patients : {})]);
     ids.forEach((pid) => {
     const priorChanges = changes;
@@ -369,8 +380,8 @@
     const title = patientTitle(p.name, p.code, p.breed, p.weight || '- kg');
     let status = '';
     if (now?.predicted) status = '미연장';
-    else if (extended) { status = '연장'; changes += 1; }
-    else if (discharged) { status = '퇴원'; changes += 1; }
+    else if (extended) { status = '연장'; changes += 1; changeKinds.status += 1; }
+    else if (discharged) { status = '퇴원'; changes += 1; changeKinds.status += 1; }
     const currentItems = now ? now.items : [];
     const oldItems = old ? old.items : [];
     const used = new Set();
@@ -381,7 +392,10 @@
     const prev = pi >= 0 ? oldItems[pi] : null;
     if (pi >= 0) used.add(pi);
     const changed = !prev || !sameItem(item, prev);
-    if (changed) changes += 1;
+    if (changed) {
+    changes += 1;
+    changeKinds[prev ? 'changed' : 'added'] += 1;
+    }
     const line = changedItem(item, prev, prev ? 'changed' : 'added');
     (item.conditional ? conds : lines).push(line);
     });
@@ -389,6 +403,7 @@
     if (used.has(i)) return;
     if (!item.times.some((time) => !time.cancelled)) return;
     changes += 1;
+    changeKinds.removed += 1;
     const line = changedItem(item, null, 'removed');
     (item.conditional ? conds : lines).push(line);
     });
@@ -404,7 +419,7 @@
     sortName: p.name, sortCage: p.cage, body: conds, note: '',
     });
     });
-    return { normal, cond, changes };
+    return { normal, cond, changes, changeKinds };
     }
     const baselineKey = (date) => INJ_BASELINE + HOSPITAL_ID + ':' + date;
     const checkedTime = (value) => {
@@ -460,6 +475,7 @@
     }
     if (g.cond.length) out.push({ heading: '조건부', groups: g.cond });
     out.changeCount = g.changes;
+    out.changeKinds = g.changeKinds;
     out.snapshot = snapshot;
     out.baselineKey = baselineKey(date);
     out.firstCheck = firstCheck;
@@ -470,10 +486,13 @@
     .split(U0).join('<u style="font-weight:800">').split(U1).join('</u>')
     .split(E0).join('<strong style="font-weight:800;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px">')
     .split(E1).join('</strong>')
-    .split(O0).join('<span style="color:#c2410c;font-weight:700">').split(O1).join('</span>')
-    .split(X0).join('<span style="color:#c2410c;font-weight:700;text-decoration:line-through;text-decoration-thickness:2px">').split(X1).join('</span>')
+    .split(O0).join('<span style="color:#b45309;font-weight:800">').split(O1).join('</span>')
+    .split(X0).join('<span style="color:#b42318;font-weight:600;text-decoration:line-through;text-decoration-thickness:2px">').split(X1).join('</span>')
     .split(G0).join('<span style="display:inline-block;white-space:nowrap;padding:0 4px;border:1px solid #9ca3af;border-radius:3px;background:#f9fafb;color:#4b5563;font-weight:700">')
-    .split(G1).join('</span>');
+    .split(G1).join('</span>')
+    .split(A0).join('<span style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #93c5fd;border-radius:3px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:800;vertical-align:1px">').split(A1).join('</span>')
+    .split(D0).join('<span style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #fca5a5;border-radius:3px;background:#fef2f2;color:#b42318;font-size:12px;font-weight:800;vertical-align:1px">').split(D1).join('</span>')
+    .split(B0).join('<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">').split(B1).join('</span>');
     const asText = (sections) => sections.map((s) =>
     s.heading + (s.reviewNote ? '\n' + s.reviewNote : '') + '\n' + s.groups.map((g) =>
     (g.title ? g.title + ' ' + g.cage + (g.status ? ' [' + g.status + ']' : '') + (g.updated ? ' [처치 업데이트]' : '') + '\n  ' : '  ') +
@@ -484,20 +503,36 @@
     .split(E0).join('**__').split(E1).join('__**')
     .split(O0).join('**').split(O1).join('**')
     .split(X0).join('~~').split(X1).join('~~')
-    .split(G0).join('[').split(G1).join(']');
+    .split(G0).join('[').split(G1).join(']')
+    .split(A0).join('**[').split(A1).join(']**')
+    .split(D0).join('**[').split(D1).join(']**')
+    .split(B0).join('~~').split(B1).join('~~');
+    const patientTitleHtml = (title) => {
+    const value = String(title || '');
+    const split = value.lastIndexOf(' (');
+    if (split < 0 || !value.endsWith(')')) return esc(value);
+    const name = value.slice(0, split);
+    const info = value.slice(split + 2, -1).split(' · ');
+    const weight = /^(?:- |\d+(?:\.\d+)? )kg$/i.test(info[0] || '') ? info.shift() : '';
+    const meta = info.join(' · ');
+    return esc(name) + ' <span style="color:#64748b;font-size:14px;font-weight:500">(' +
+    (weight ? '<span style="color:#111827;font-size:15px;font-weight:800">' + esc(weight) + '</span>' : '') +
+    (weight && meta ? ' · ' : '') + (meta ? esc(meta) : '') + ')</span>';
+    };
     const render = (sections) => sections.map((s) =>
     '<h2 style="font-size:14px;margin:18px 0 8px;color:' + (s.warn ? '#b45309' : '#6b7280') + '">' + esc(s.heading) + '</h2>' +
     (s.groups.length ? s.groups.map((g) =>
-    '<div style="padding:11px 0;border-bottom:1px solid #e5e7eb">' +
-    (g.title ? '<div style="font-weight:700;font-size:16px">' + toHtml(g.title) +
+    '<div style="padding:12px 0 13px;border-bottom:1px solid #cbd5e1;' +
+    (g.updated ? 'border-left:3px solid #64748b;padding-left:10px;' : '') + '">' +
+    (g.title ? '<div style="font-weight:700;font-size:16px;line-height:1.45">' + patientTitleHtml(g.title) +
     ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span>' +
     (g.status ? ' <span style="display:inline-block;white-space:nowrap;padding:0 5px;border-radius:3px;font-size:13px;font-weight:800;' +
     (g.status === '연장' ? 'background:#fef08a;color:#713f12' :
-    g.status === '미연장' ? 'background:#ffedd5;color:#9a3412;border-left:3px solid #f97316' :
-    'background:#ffedd5;color:#c2410c;text-decoration:line-through') + '">' + esc(g.status) + '</span>' : '') +
-    (g.updated ? ' <span style="color:#c2410c;font-size:13px;font-weight:700;white-space:nowrap">처치 업데이트</span>' : '') + '</div>' : '') +
-    g.body.map((b) => '<div style="margin-top:3px">' + toHtml(b) + '</div>').join('') +
-    (g.note ? '<div style="margin-top:3px;color:#b45309;font-weight:600">' + esc(g.note) + '</div>' : '') +
+    g.status === '미연장' ? 'background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db' :
+    'background:#fef2f2;color:#b42318;border:1px solid #fecaca;text-decoration:line-through') + '">' + esc(g.status) + '</span>' : '') +
+    (g.updated ? ' <span style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #cbd5e1;border-radius:3px;background:#f8fafc;color:#334155;font-size:12px;font-weight:800">처치 업데이트</span>' : '') + '</div>' : '') +
+    g.body.map((b) => '<div style="margin-top:4px;font-size:15px;font-weight:500;line-height:1.45">' + toHtml(b) + '</div>').join('') +
+    (g.note ? '<div style="margin-top:4px;color:#475569;font-weight:600">' + esc(g.note) + '</div>' : '') +
     '</div>').join('') : '<p style="color:#6b7280">해당 항목이 없습니다.</p>')
     ).join('');
     const compareText = (a, b) => String(a || '').localeCompare(String(b || ''), 'ko', {
@@ -529,7 +564,7 @@
     box.id = 'vsp';
     box.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;background:#fff;color:#111;' +
     'font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;overflow:auto;' +
-    '-webkit-overflow-scrolling:touch;padding:0 0 40px');
+    '-webkit-overflow-scrolling:touch;padding:0 0 40px;font-variant-numeric:tabular-nums');
     box.innerHTML =
     '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
     TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
@@ -560,12 +595,18 @@
     const firstCheck = id === 'inj' && sections.firstCheck ?
     '<div style="margin:0 -16px;padding:8px 16px;background:#ecfdf5;border-bottom:1px solid #a7f3d0;color:#065f46;font-weight:700">' +
     '오늘 첫 확인 · 기준 목록 저장됨</div>' : '';
+    const kindStyle = { added: 'color:#1d4ed8', changed: 'color:#b45309', removed: 'color:#b42318', status: 'color:#475569' };
+    const kindLabel = { added: '추가', changed: '변경', removed: '삭제', status: '상태' };
+    const kindSummary = Object.keys(kindLabel).filter((kind) => sections.changeKinds && sections.changeKinds[kind])
+    .map((kind) => '<span style="white-space:nowrap;font-size:13px;font-weight:800;' + kindStyle[kind] + '">' +
+    kindLabel[kind] + ' ' + sections.changeKinds[kind] + '</span>').join('<span style="color:#cbd5e1">·</span>');
     const changes = id === 'inj' && sections.changeCount ?
-    '<div style="margin:0 -16px;padding:9px 16px;background:#fff7ed;border-bottom:1px solid #fed7aa;display:flex;align-items:center;gap:10px">' +
-    '<div><strong style="color:#c2410c">변경 ' + sections.changeCount + '건</strong>' +
-    (sections[0].reviewNote ? '<div style="font-size:13px;color:#9a3412">' + esc(sections[0].reviewNote) + '</div>' : '') +
+    '<div style="margin:0 -16px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<div><strong style="color:#1f2937">변경 ' + sections.changeCount + '건</strong>' +
+    (kindSummary ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + kindSummary + '</div>' : '') +
+    (sections[0].reviewNote ? '<div style="font-size:13px;color:#64748b">' + esc(sections[0].reviewNote) + '</div>' : '') +
     '</div><span style="flex:1"></span>' +
-    '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #c2410c;border-radius:6px;background:#fff;color:#c2410c">변경 확인</button></div>' : '';
+    '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #0f766e;border-radius:6px;background:#fff;color:#0f766e">변경 확인</button></div>' : '';
     body.innerHTML = sortControl + refresh + firstCheck + changes + render(ordered);
     body.querySelectorAll('[data-sort]').forEach((button) => {
     button.onclick = () => { sortMode = button.dataset.sort; paint(id, sections); };
