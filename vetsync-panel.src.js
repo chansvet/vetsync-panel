@@ -387,6 +387,7 @@
     });
     const snapshot = makeSnapshot(rows);
     let previous = loadBaseline(date);
+    const firstCheck = !previous;
     if (!previous) { saveBaseline(date, snapshot); previous = snapshot; }
     const g = compareSnapshot(snapshot, previous, states);
     const out = [{ heading: date + ' 17시 ~ ' + next + ' 15시 주사', groups: g.normal }];
@@ -394,6 +395,7 @@
     out.changeCount = g.changes;
     out.snapshot = snapshot;
     out.baselineKey = baselineKey(date);
+    out.firstCheck = firstCheck;
     return out;
   }
 
@@ -491,11 +493,14 @@
           (mode === 'name' ? '이름순' : '장순') + '</button>').join('') + '</div></div>';
       const refresh = id === 'inj' ?
         '<div style="margin:8px 0"><button id="vsp-refresh" style="font:inherit;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff">새로 확인</button></div>' : '';
+      const firstCheck = id === 'inj' && sections.firstCheck ?
+        '<div style="margin:0 -16px;padding:8px 16px;background:#ecfdf5;border-bottom:1px solid #a7f3d0;color:#065f46;font-weight:700">' +
+        '오늘 첫 확인 · 기준 목록 저장됨</div>' : '';
       const changes = id === 'inj' && sections.changeCount ?
         '<div style="margin:0 -16px;padding:9px 16px;background:#fff7ed;border-bottom:1px solid #fed7aa;display:flex;align-items:center;gap:10px">' +
         '<strong style="color:#c2410c">변경 ' + sections.changeCount + '건</strong><span style="flex:1"></span>' +
         '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #c2410c;border-radius:6px;background:#fff;color:#c2410c">변경 확인</button></div>' : '';
-      body.innerHTML = sortControl + refresh + changes + render(ordered);
+      body.innerHTML = sortControl + refresh + firstCheck + changes + render(ordered);
       body.querySelectorAll('[data-sort]').forEach((button) => {
         button.onclick = () => { sortMode = button.dataset.sort; paint(id, sections); };
       });
