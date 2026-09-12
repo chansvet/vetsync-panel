@@ -43,7 +43,7 @@ const sections = [{ heading: '주사', groups: compared.normal }];
 const html = context.__test.render(sections);
 const text = context.__test.asText(sections);
 
-assert.strictEqual(compared.changes, 5);
+assert.strictEqual(compared.changes, 2);
 assert.deepStrictEqual({ ...compared.changeKinds }, { added: 1, changed: 1, removed: 1, status: 2 });
 assert.strictEqual((html.match(/처치 업데이트/g) || []).length, 2);
 assert.match(html, /쪼코 .*5\.2 kg.*#12345 · 푸들/);
@@ -105,6 +105,21 @@ const cancelledLast = context.__test.toHtml(context.__test.rawItem(item('SAM', '
 ], { frequency: 'TID' })));
 assert.match(cancelledLast, /border:1px solid #9ca3af[^>]+>제외: 내일 9시<\/span>/);
 assert.doesNotMatch(cancelledLast, /line-through|마지막 시간 취소/);
+
+const cancelledMiddle = context.__test.toHtml(context.__test.rawItem(item('SAM', '22mpk', 'IV', [
+  ['오늘', 17, 17], ['오늘', 21, 21, true], ['내일', 1, 101], ['내일', 9, 109],
+], { frequency: 'QID' })));
+assert.match(cancelledMiddle, /17시.*제외: 21시.*내일 1시.*내일 9시/);
+
+const multipleAdds = context.__test.compareSnapshot(
+  { patients: { one: patient('추가환자', false, [
+    item('B12', '', 'IM', today(18)), item('DPO', '', 'SC', today(19)),
+  ]) } },
+  { patients: { one: patient('추가환자', false, []) } },
+  {}
+);
+assert.strictEqual(multipleAdds.changes, 1);
+assert.strictEqual(multipleAdds.changeKinds.added, 1);
 
 const activeSam = patient('취소변경', false, [item('SAM', '22mpk', 'IV', [
   ['오늘', 17, 17], ['내일', 1, 101], ['내일', 9, 109],

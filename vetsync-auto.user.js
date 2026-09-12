@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      1.0.18
+// @version      1.0.19
 // @description  Safari 전용 주소로 VetSync를 열면 채혈·주사 패널을 자동으로 표시합니다. 실험적 기능입니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -290,8 +290,8 @@
     const beforeValue = (s) => B0 + s + B1;
     const plainTimeLabel = (t) => (t.tag === '내일' ? '내일 ' : '') + t.hour + '시';
     const excluded = (times) => G0 + '제외: ' + times.map(plainTimeLabel).join(', ') + G1;
-    const timeGroups = (active, skipped) => [active.join(', '), skipped.length ? excluded(skipped) : '']
-    .filter(Boolean).join(' | ');
+    const orderedTimeText = (times, item) => [...times].sort((a, b) => a.order - b.order)
+    .map((t) => t.cancelled ? excluded([t]) : timeLabel(t, item)).join(', ');
     const routeLabel = (route) => /^(SC|IM)$/.test(route) ? U0 + route + U1 : route;
     function makeSnapshot(rows) {
     const patients = {};
@@ -321,9 +321,7 @@
     const rawItem = (item) => {
     const label = [item.drug, item.dose, routeLabel(item.route)].filter(Boolean).join(' ');
     const extra = [item.note, item.instruction].filter(Boolean).join(', ');
-    const active = item.times.filter((t) => !t.cancelled).map((t) => timeLabel(t, item));
-    const skipped = item.times.filter((t) => t.cancelled);
-    return label + ' (' + timeGroups(active, skipped) + ')' + (extra ? ' [' + extra + ']' : '');
+    return label + ' (' + orderedTimeText(item.times, item) + ')' + (extra ? ' [' + extra + ']' : '');
     };
     function changedItem(item, prev, kind) {
     let text;
@@ -341,22 +339,24 @@
     .filter(Boolean).join(' ');
     const oldByTime = new Map(prev.times.map((t) => [timeKey(t), t]));
     const nowTimes = new Set(item.times.map(timeKey));
-    const active = [];
-    const skipped = [];
+    const times = [];
     item.times.forEach((t) => {
     const old = oldByTime.get(timeKey(t));
-    if (t.cancelled) { skipped.push(t); return; }
-    if (!old) { active.push(orange(timeLabel(t, item))); return; }
-    if (old.cancelled) { active.push(orange(timeLabel(t, item) + ' 재개')); return; }
-    active.push(timeLabel(t, item));
+    if (t.cancelled) { times.push({ order: t.order, text: excluded([t]) }); return; }
+    if (!old) { times.push({ order: t.order, text: orange(timeLabel(t, item)) }); return; }
+    if (old.cancelled) { times.push({ order: t.order, text: orange(timeLabel(t, item) + ' 재개') }); return; }
+    times.push({ order: t.order, text: timeLabel(t, item) });
     });
     prev.times.forEach((t) => {
-    if (!t.cancelled && !nowTimes.has(timeKey(t))) active.push(cancelled(timeLabel(t, prev)));
+    if (!t.cancelled && !nowTimes.has(timeKey(t))) {
+    times.push({ order: t.order, text: cancelled(timeLabel(t, prev)) });
+    }
     });
     const extraNow = [item.note, item.instruction].filter(Boolean).join(', ');
     const extraOld = [prev.note, prev.instruction].filter(Boolean).join(', ');
     const extra = extraNow === extraOld ? extraNow : orange([extraOld, extraNow].filter(Boolean).join('→'));
-    text = label + ' (' + timeGroups(active, skipped) + ')' + (extra ? ' [' + extra + ']' : '');
+    text = label + ' (' + times.sort((a, b) => a.order - b.order).map((t) => t.text).join(', ') + ')' +
+    (extra ? ' [' + extra + ']' : '');
     }
     return text;
     }
@@ -366,11 +366,13 @@
     a.times.map(timeStateKey).join(',') === b.times.map(timeStateKey).join(',');
     function compareSnapshot(current, previous, states) {
     const normal = [], cond = [];
-    let changes = 0;
+    let events = 0;
+    let changedPatients = 0;
     const changeKinds = { added: 0, changed: 0, removed: 0, status: 0 };
     const ids = new Set([...Object.keys(current.patients), ...Object.keys(previous ? previous.patients : {})]);
     ids.forEach((pid) => {
-    const priorChanges = changes;
+    const priorEvents = events;
+    const patientKinds = { added: false, changed: false, removed: false, status: false };
     const now = current.patients[pid];
     const old = previous && previous.patients[pid];
     const p = now || old;
@@ -380,8 +382,8 @@
     const title = patientTitle(p.name, p.code, p.breed, p.weight || '- kg');
     let status = '';
     if (now?.predicted) status = '미연장';
-    else if (extended) { status = '연장'; changes += 1; changeKinds.status += 1; }
-    else if (discharged) { status = '퇴원'; changes += 1; changeKinds.status += 1; }
+    else if (extended) { status = '연장'; events += 1; patientKinds.status = true; }
+    else if (discharged) { status = '퇴원'; events += 1; patientKinds.status = true; }
     const currentItems = now ? now.items : [];
     const oldItems = old ? old.items : [];
     const used = new Set();
@@ -393,8 +395,8 @@
     if (pi >= 0) used.add(pi);
     const changed = !prev || !sameItem(item, prev);
     if (changed) {
-    changes += 1;
-    changeKinds[prev ? 'changed' : 'added'] += 1;
+    events += 1;
+    patientKinds[prev ? 'changed' : 'added'] = true;
     }
     const line = changedItem(item, prev, prev ? 'changed' : 'added');
     (item.conditional ? conds : lines).push(line);
@@ -402,12 +404,18 @@
     oldItems.forEach((item, i) => {
     if (used.has(i)) return;
     if (!item.times.some((time) => !time.cancelled)) return;
-    changes += 1;
-    changeKinds.removed += 1;
+    events += 1;
+    patientKinds.removed = true;
     const line = changedItem(item, null, 'removed');
     (item.conditional ? conds : lines).push(line);
     });
-    const updated = changes > priorChanges;
+    const updated = events > priorEvents;
+    if (updated) {
+    changedPatients += 1;
+    Object.keys(patientKinds).forEach((kind) => {
+    if (patientKinds[kind]) changeKinds[kind] += 1;
+    });
+    }
     if (lines.length) normal.push({
     updated,
     title, cage: p.cage, status,
@@ -419,7 +427,7 @@
     sortName: p.name, sortCage: p.cage, body: conds, note: '',
     });
     });
-    return { normal, cond, changes, changeKinds };
+    return { normal, cond, changes: changedPatients, changeKinds };
     }
     const baselineKey = (date) => INJ_BASELINE + HOSPITAL_ID + ':' + date;
     const checkedTime = (value) => {
@@ -599,10 +607,10 @@
     const kindLabel = { added: '추가', changed: '변경', removed: '삭제', status: '상태' };
     const kindSummary = Object.keys(kindLabel).filter((kind) => sections.changeKinds && sections.changeKinds[kind])
     .map((kind) => '<span style="white-space:nowrap;font-size:13px;font-weight:800;' + kindStyle[kind] + '">' +
-    kindLabel[kind] + ' ' + sections.changeKinds[kind] + '</span>').join('<span style="color:#cbd5e1">·</span>');
+    kindLabel[kind] + ' ' + sections.changeKinds[kind] + '명</span>').join('<span style="color:#cbd5e1">·</span>');
     const changes = id === 'inj' && sections.changeCount ?
     '<div style="margin:0 -16px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-    '<div><strong style="color:#1f2937">변경 ' + sections.changeCount + '건</strong>' +
+    '<div><strong style="color:#1f2937">변경 환자 ' + sections.changeCount + '명</strong>' +
     (kindSummary ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + kindSummary + '</div>' : '') +
     (sections[0].reviewNote ? '<div style="font-size:13px;color:#64748b">' + esc(sections[0].reviewNote) + '</div>' : '') +
     '</div><span style="flex:1"></span>' +
