@@ -45,6 +45,8 @@
   const O0 = '\u0005', O1 = '\u0006';
   const X0 = '\u0007', X1 = '\u0008';
   const INJ_BASELINE = 'vetsync-injection-baseline-v1:';
+  const MONITOR_KEY = 'vetsync-injection-monitor-v1';
+  const MONITOR_INTERVAL = 3 * 60 * 1000;
 
   const pad = (n) => String(n).padStart(2, '0');
   const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -66,8 +68,8 @@
     return r.json();
   };
   const cache = {};
-  const collect = async (date) => {
-    if (cache[date]) return cache[date];
+  const collect = async (date, force = false) => {
+    if (!force && cache[date]) return cache[date];
     const list = await get('/charts?date=' + date);
     const details = await Promise.all(list.items.map((c) => get('/charts/' + c.chartId)));
     return (cache[date] = { charts: list.items, details });
@@ -354,10 +356,10 @@
     catch (_) { /* 저장이 막혀도 목록 자체는 계속 보여준다. */ }
   }
 
-  async function injections(date) {
+  async function injections(date, force = false) {
     const next = shift(date, 1);
-    const today = await collect(date);
-    const tomorrow = await collect(next);
+    const today = await collect(date, force);
+    const tomorrow = await collect(next, force);
     const rows = [];
     const states = {};
     today.charts.forEach((c) => {
@@ -443,11 +445,66 @@
       '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
       '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
     document.body.appendChild(box);
-    box.querySelector('#vsp-x').onclick = () => box.remove();
-
     let text = '';
-    const show = async (id) => {
+    let activeId = 'blood';
+    let monitorTimer = null;
+    let monitorBusy = false;
+    let monitorEnabled = localStorage.getItem(MONITOR_KEY) === '1';
+    let lastNotifiedSignature = '';
+
+    const notifyChanges = (sections) => {
+      if (!sections.changeCount) return;
+      const signature = JSON.stringify(sections.snapshot);
+      if (signature === lastNotifiedSignature) return;
+      lastNotifiedSignature = signature;
+      if ('Notification' in window && Notification.permission === 'granted') {
+        const notification = new Notification('VetSync 주사 처치 변경', {
+          body: '주사 처치 변경 ' + sections.changeCount + '건이 있습니다.',
+          tag: 'vetsync-injection-change',
+        });
+        notification.onclick = () => window.focus();
+      }
+    };
+
+    const paint = (id, sections) => {
       const body = box.querySelector('#vsp-body');
+      if (!body) return;
+      text = asText(sections);
+      const notificationNote = !('Notification' in window) || Notification.permission === 'denied' ?
+        ' · 화면 표시만' : '';
+      const monitor = id === 'inj' ?
+        '<div style="margin:0 -16px;padding:10px 16px;background:#f3f4f6;border-bottom:1px solid #d1d5db;display:flex;align-items:center;gap:9px">' +
+        '<strong>변경 감시</strong><span style="font-size:13px;color:#6b7280">' +
+        (monitorEnabled ? '3분마다 자동 확인' + notificationNote : '꺼짐') + '</span><span style="flex:1"></span>' +
+        '<button id="vsp-monitor" style="font:inherit;font-weight:700;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff;color:#374151">' +
+        (monitorEnabled ? '감시 끄기' : '감시 켜기') + '</button></div>' : '';
+      const changes = id === 'inj' && sections.changeCount ?
+        '<div style="margin:0 -16px;padding:9px 16px;background:#fff7ed;border-bottom:1px solid #fed7aa;display:flex;align-items:center;gap:10px">' +
+        '<strong style="color:#c2410c">변경 ' + sections.changeCount + '건</strong><span style="flex:1"></span>' +
+        '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #c2410c;border-radius:6px;background:#fff;color:#c2410c">변경 확인</button></div>' : '';
+      body.innerHTML = monitor + changes + render(sections);
+      const accept = body.querySelector('#vsp-accept');
+      if (accept) accept.onclick = () => {
+        localStorage.setItem(sections.baselineKey, JSON.stringify(sections.snapshot));
+        lastNotifiedSignature = '';
+        show(id, true);
+      };
+      const monitorButton = body.querySelector('#vsp-monitor');
+      if (monitorButton) monitorButton.onclick = async () => {
+        monitorEnabled = !monitorEnabled;
+        localStorage.setItem(MONITOR_KEY, monitorEnabled ? '1' : '0');
+        if (monitorEnabled && 'Notification' in window && Notification.permission === 'default') {
+          await Notification.requestPermission();
+        }
+        syncMonitor();
+        show('inj', true);
+      };
+    };
+
+    const show = async (id, force = false) => {
+      activeId = id;
+      const body = box.querySelector('#vsp-body');
+      if (!body) return;
       body.innerHTML = '<p>불러오는 중…</p>';
       box.querySelectorAll('[data-tab]').forEach((b) => {
         const on = b.dataset.tab === id;
@@ -455,28 +512,40 @@
         b.style.color = on ? '#0f766e' : '#fff';
       });
       try {
-        const sections = await TABS.find((t) => t.id === id).run(ymd(new Date()));
-        text = asText(sections);
-        const changes = id === 'inj' && sections.changeCount ?
-          '<div style="position:sticky;top:61px;z-index:1;margin:0 -16px;padding:9px 16px;background:#fff7ed;border-bottom:1px solid #fed7aa;display:flex;align-items:center;gap:10px">' +
-          '<strong style="color:#c2410c">변경 ' + sections.changeCount + '건</strong><span style="flex:1"></span>' +
-          '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #c2410c;border-radius:6px;background:#fff;color:#c2410c">변경 확인</button></div>' : '';
-        body.innerHTML = changes + render(sections);
-        const accept = body.querySelector('#vsp-accept');
-        if (accept) accept.onclick = () => {
-          localStorage.setItem(sections.baselineKey, JSON.stringify(sections.snapshot));
-          show(id);
-        };
+        const sections = await TABS.find((t) => t.id === id).run(ymd(new Date()), force);
+        paint(id, sections);
       } catch (e) {
         text = '';
         body.innerHTML = '<p style="color:#b91c1c">' + esc(e.message) + '</p>';
       }
     };
-    box.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => show(b.dataset.tab)));
+
+    const pollChanges = async () => {
+      if (monitorBusy) return;
+      monitorBusy = true;
+      try {
+        const sections = await injections(ymd(new Date()), true);
+        notifyChanges(sections);
+        if (activeId === 'inj' && box.isConnected) paint('inj', sections);
+      } catch (_) { /* 다음 주기에 다시 확인한다. */ }
+      finally { monitorBusy = false; }
+    };
+    function syncMonitor() {
+      if (monitorTimer) clearInterval(monitorTimer);
+      monitorTimer = monitorEnabled ? setInterval(pollChanges, MONITOR_INTERVAL) : null;
+      if (monitorEnabled) pollChanges();
+    }
+
+    box.querySelector('#vsp-x').onclick = () => {
+      if (monitorTimer) clearInterval(monitorTimer);
+      box.remove();
+    };
+    box.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => show(b.dataset.tab, b.dataset.tab === 'inj')));
     box.querySelector('#vsp-copy').onclick = async (e) => {
       try { await navigator.clipboard.writeText(text); e.target.textContent = '복사됨'; }
       catch (_) { e.target.textContent = '복사 실패'; }
     };
+    syncMonitor();
     show('blood');
   }
 
