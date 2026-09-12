@@ -6,7 +6,8 @@ const HOSPITAL_ID = '24';
 const DRAW_HOUR = 9;
 const EVENING = [17, 18, 19, 20, 21, 22, 23];
 const NEXT = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-const LIVE = ['PLANNED', 'COMPLETED', 'IN_PROGRESS', 'SKIPPED'];
+const ACTIVE = ['PLANNED', 'COMPLETED', 'IN_PROGRESS'];
+const CANCELLED_CELL = ['SKIPPED', 'CANCELLED'];
 const LAB = /혈검|혈액검사|도말|가스|전해질|신4|신장\s*4종|간4|간\s*4종|간이혈당|\bCBC\b|\bCRP\b|\bSAA\b|\bfSAA\b|\bSDMA\b|\bTnI\b|\bCPL\b|\bfPL\b|\bFPL\b|\bPCV\b|\bCK\b|\bChem\d*\b|\bgas\b|\blyte\b|\bTBIL\b|\bT\.?bil\b|\bBUN\b|\bCrea\b|\bALT\b|\bALP\b|\bALB\b|\bphos\b|\bTP\s*\/\s*A\w*\b|\bLactate\b/i;
 const NOT_LAB = /혈압|항혈전|고혈압|이뇨|수혈|요배양|요검사|뇨검사|요카|초음파|방사선|조직검사|항감테|내복|아이스팩|음수|배뇨|배변|CRI|스푼|산소|O2\s*supply/i;
 const GLUCOSE_ONLY = /^(간이혈당|혈당|혈당\s*체크)$/;
@@ -70,6 +71,30 @@ const c = rowsOf(detail)
 .sort((a, b) => a.h - b.h);
 return c.length ? c[c.length - 1] : null;
 };
+const weightValue = (value) => {
+if (value === null || value === undefined || value === '') return '';
+if (typeof value === 'object') {
+return weightValue(value.value ?? value.kg ?? value.weight ?? value.amount);
+}
+const match = String(value).replace(',', '.').match(/\d+(?:\.\d+)?/);
+return match && Number(match[0]) > 0 ? String(Number(match[0])) + ' kg' : '';
+};
+const latestWeight = (detail, chart) => {
+const measured = rowsOf(detail)
+.filter((r) => /WEIGHT/i.test(r.measurementRole || '') || /^(체중|몸무게|weight)/i.test(r.displayName || ''))
+.flatMap((r) => (r.cells || []).map((cell) => ({
+hour: Number(cell.hourSlot) || 0,
+value: (cell.resultSlots || []).map((slot) => weightValue(slot.value)).find(Boolean) || '',
+})))
+.filter((entry) => entry.value)
+.sort((a, b) => a.hour - b.hour);
+if (measured.length) return measured[measured.length - 1].value;
+const candidates = [
+detail.latestWeight, detail.latestWeightKg, detail.weight, detail.weightKg,
+chart.patient.latestWeight, chart.patient.latestWeightKg, chart.patient.weight, chart.patient.weightKg,
+];
+return candidates.map(weightValue).find(Boolean) || '- kg';
+};
 const noteOf = (row) => {
 if (row.instructionText) return row.instructionText.trim();
 const parts = row.displayName.split(/[,()[\]{}]/).map((s) => s.trim()).filter(Boolean);
@@ -97,7 +122,7 @@ if (!admitted(chart, detail, date, DRAW_HOUR)) return;
 const labs = rowsOf(detail).filter((r) => {
 const n = (r.displayName || '').trim();
 if (!LAB.test(n) || NOT_LAB.test(n) || GLUCOSE_ONLY.test(n)) return false;
-return (r.cells || []).some((c) => c.hourSlot === DRAW_HOUR && LIVE.includes(c.status));
+return (r.cells || []).some((c) => c.hourSlot === DRAW_HOUR && ACTIVE.includes(c.status));
 });
 if (!labs.length) return;
 const hasE = labs.some((r) => ELECTROLYTE.test(r.displayName));
@@ -170,23 +195,27 @@ if (!name.includes(',')) return [name];
 const parts = name.split(/,\s*/).map((s) => s.trim()).filter(Boolean);
 return parts.length > 1 && parts.every((p) => ROUTE.test(p) || KNOWN.test(p)) ? parts : [name];
 };
-function pickInj(chart, detail, date, hours, tag) {
+function pickInj(chart, detail, date, hours, tag, includeCancelled = true) {
 const out = [];
+const weight = latestWeight(detail, chart);
 treatRows(detail).forEach((row) => {
 const name = (row.displayName || '').trim();
 if (!isInjection(name)) return;
 const parts = splitDrugs(name);
 const rowFrequency = frequencyFrom(name + ' ' + (row.instructionText || ''));
 (row.cells || []).forEach((cell) => {
-if (!hours.includes(cell.hourSlot) || !LIVE.includes(cell.status)) return;
+const isCancelled = CANCELLED_CELL.includes(cell.status);
+if (!hours.includes(cell.hourSlot) || (!ACTIVE.includes(cell.status) && !isCancelled)) return;
+if (isCancelled && !includeCancelled) return;
 if (!admitted(chart, detail, date, cell.hourSlot)) return;
 parts.forEach((p, i) => {
 const parsed = parseDrug(p);
 out.push({
 pid: String(chart.patient.patientId), patient: chart.patient.name, code: chart.patient.hospitalPatientCode,
-breed: breedOf(chart.patient),
+breed: breedOf(chart.patient), weight,
 cage: chart.cageLabel || '미지정', tag, hour: cell.hourSlot,
 order: (tag === '내일' ? 100 : 0) + cell.hourSlot,
+cancelled: isCancelled,
 key: name + '#' + i, raw: name, instruction: row.instructionText || '', ...parsed,
 frequency: parsed.frequency || rowFrequency,
 });
@@ -197,6 +226,7 @@ return out;
 }
 const normDrug = (s) => String(s || '').toLowerCase().replace(/[\s,._-]+/g, '');
 const timeKey = (t) => t.tag + '|' + t.hour;
+const timeStateKey = (t) => timeKey(t) + '|' + (t.cancelled ? 'cancelled' : 'active');
 const frequencyOf = (item) => {
 if (item && item.frequency) return item.frequency;
 const written = frequencyFrom(String(item && item.note || '') + ' ' + String(item && item.instruction || ''));
@@ -218,16 +248,18 @@ function makeSnapshot(rows) {
 const patients = {};
 rows.forEach((r) => {
 const p = patients[r.pid] = patients[r.pid] || {
-pid: r.pid, name: r.patient, code: r.code, breed: r.breed, cage: r.cage, predicted: false, items: {},
+pid: r.pid, name: r.patient, code: r.code, breed: r.breed, weight: r.weight,
+cage: r.cage, predicted: false, items: {},
 };
 if (r.cage !== '미지정') p.cage = r.cage;
+if (r.weight && r.weight !== '- kg') p.weight = r.weight;
 if (r.predicted) p.predicted = true;
 const item = p.items[r.key] = p.items[r.key] || {
 match: normDrug(r.drug) || normDrug(r.raw), drug: r.drug, dose: r.dose, route: r.route, frequency: r.frequency,
 note: r.note, instruction: r.instruction, conditional: COND.test(r.raw + ' ' + r.instruction), times: [],
 };
-if (!item.times.some((t) => timeKey(t) === timeKey(r))) {
-item.times.push({ tag: r.tag, hour: r.hour, order: r.order });
+if (!item.times.some((t) => timeStateKey(t) === timeStateKey(r))) {
+item.times.push({ tag: r.tag, hour: r.hour, order: r.order, cancelled: !!r.cancelled });
 }
 });
 Object.values(patients).forEach((p) => {
@@ -235,12 +267,17 @@ p.items = Object.values(p.items).map((item) => ({
 ...item, times: item.times.sort((a, b) => a.order - b.order),
 }));
 });
-return { patients };
+return { checkedAt: new Date().toISOString(), patients };
 }
+const displayedTime = (time, item) => time.cancelled ?
+cancelled(timeLabel(time, item) + ' 취소') : timeLabel(time, item);
 const rawItem = (item) => {
 const label = [item.drug, item.dose, routeLabel(item.route)].filter(Boolean).join(' ');
 const extra = [item.note, item.instruction].filter(Boolean).join(', ');
-return label + ' (' + item.times.map((t) => timeLabel(t, item)).join(', ') + ')' + (extra ? ' [' + extra + ']' : '');
+const lastCancelled = item.times.length && item.times[item.times.length - 1].cancelled ?
+' ' + orange('[마지막 시간 취소]') : '';
+return label + ' (' + item.times.map((t) => displayedTime(t, item)).join(', ') + ')' + lastCancelled +
+(extra ? ' [' + extra + ']' : '');
 };
 function changedItem(item, prev, kind) {
 let text;
@@ -252,21 +289,30 @@ const route = item.route === prev.route ? routeLabel(item.route) :
 orange([routeLabel(prev.route), routeLabel(item.route)].filter(Boolean).join('→'));
 const label = [field(item.drug, prev.drug), field(item.dose, prev.dose), route]
 .filter(Boolean).join(' ');
+const oldByTime = new Map(prev.times.map((t) => [timeKey(t), t]));
 const nowTimes = new Set(item.times.map(timeKey));
-const oldTimes = new Set(prev.times.map(timeKey));
-const times = item.times.map((t) => oldTimes.has(timeKey(t)) ? timeLabel(t, item) : orange(timeLabel(t, item)));
-prev.times.forEach((t) => { if (!nowTimes.has(timeKey(t))) times.push(cancelled(timeLabel(t, prev))); });
+const times = item.times.map((t) => {
+const old = oldByTime.get(timeKey(t));
+if (!old) return t.cancelled ? displayedTime(t, item) : orange(displayedTime(t, item));
+if (!!old.cancelled === !!t.cancelled) return displayedTime(t, item);
+return t.cancelled ? displayedTime(t, item) : orange(timeLabel(t, item) + ' 재개');
+});
+prev.times.forEach((t) => {
+if (!nowTimes.has(timeKey(t))) times.push(cancelled(timeLabel(t, prev) + ' 취소'));
+});
 const extraNow = [item.note, item.instruction].filter(Boolean).join(', ');
 const extraOld = [prev.note, prev.instruction].filter(Boolean).join(', ');
 const extra = extraNow === extraOld ? extraNow : orange([extraOld, extraNow].filter(Boolean).join('→'));
-text = label + ' (' + times.join(', ') + ')' + (extra ? ' [' + extra + ']' : '');
+const lastCancelled = item.times.length && item.times[item.times.length - 1].cancelled ?
+' ' + orange('[마지막 시간 취소]') : '';
+text = label + ' (' + times.join(', ') + ')' + lastCancelled + (extra ? ' [' + extra + ']' : '');
 }
 return text;
 }
 const sameItem = (a, b) => a.drug === b.drug && a.dose === b.dose && a.route === b.route &&
 frequencyOf(a) === frequencyOf(b) &&
 a.note === b.note && a.instruction === b.instruction &&
-a.times.map(timeKey).join(',') === b.times.map(timeKey).join(',');
+a.times.map(timeStateKey).join(',') === b.times.map(timeStateKey).join(',');
 function compareSnapshot(current, previous, states) {
 const normal = [], cond = [];
 let changes = 0;
@@ -307,16 +353,23 @@ const line = changedItem(item, null, 'removed');
 const updated = changes > priorChanges;
 if (lines.length) normal.push({
 updated,
-title, cage: p.cage, status, sortName: p.name, sortCage: p.cage, body: lines, note: '',
+title, cage: p.cage + ' · ' + (p.weight || '- kg'), status,
+sortName: p.name, sortCage: p.cage, body: lines, note: '',
 });
 if (conds.length) cond.push({
 updated: updated && !lines.length,
-title, cage: p.cage, status, sortName: p.name, sortCage: p.cage, body: conds, note: '',
+title, cage: p.cage + ' · ' + (p.weight || '- kg'), status,
+sortName: p.name, sortCage: p.cage, body: conds, note: '',
 });
 });
 return { normal, cond, changes };
 }
 const baselineKey = (date) => INJ_BASELINE + HOSPITAL_ID + ':' + date;
+const checkedTime = (value) => {
+if (!value) return '시간 미기록';
+const date = new Date(value);
+return Number.isNaN(date.getTime()) ? '시간 미기록' : pad(date.getHours()) + ':' + pad(date.getMinutes());
+};
 const loadBaseline = (date) => {
 try { return JSON.parse(localStorage.getItem(baselineKey(date))) || null; }
 catch (_) { return null; }
@@ -343,7 +396,7 @@ states[pid].extended = true;
 tomorrow.charts.forEach((c, i) => rows.push(...pickInj(c, tomorrow.details[i], next, NEXT, '내일')));
 today.charts.forEach((c, i) => {
 if (extended.has(String(c.patient.patientId)) || c.discharged) return;
-pickInj(c, today.details[i], date, NEXT, '내일').forEach((r) => rows.push({ ...r, predicted: true }));
+pickInj(c, today.details[i], date, NEXT, '내일', false).forEach((r) => rows.push({ ...r, predicted: true }));
 });
 const snapshot = makeSnapshot(rows);
 let previous = loadBaseline(date);
@@ -351,6 +404,9 @@ const firstCheck = !previous;
 if (!previous) { saveBaseline(date, snapshot); previous = snapshot; }
 const g = compareSnapshot(snapshot, previous, states);
 const out = [{ heading: date + ' 17시 ~ ' + next + ' 15시 주사', groups: g.normal }];
+if (g.changes) {
+out[0].reviewNote = '이전 확인 ' + checkedTime(previous.checkedAt) + ' → 현재 확인 ' + checkedTime(snapshot.checkedAt);
+}
 if (g.cond.length) out.push({ heading: '조건부', groups: g.cond });
 out.changeCount = g.changes;
 out.snapshot = snapshot;
@@ -366,7 +422,7 @@ const toHtml = (s) => esc(s)
 .split(O0).join('<span style="color:#c2410c;font-weight:700">').split(O1).join('</span>')
 .split(X0).join('<span style="color:#c2410c;font-weight:700;text-decoration:line-through;text-decoration-thickness:2px">').split(X1).join('</span>');
 const asText = (sections) => sections.map((s) =>
-s.heading + '\n' + s.groups.map((g) =>
+s.heading + (s.reviewNote ? '\n' + s.reviewNote : '') + '\n' + s.groups.map((g) =>
 (g.title ? g.title + ' ' + g.cage + (g.status ? ' [' + g.status + ']' : '') + (g.updated ? ' [처치 업데이트]' : '') + '\n  ' : '  ') +
 g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
 ).join('\n')
@@ -452,7 +508,9 @@ const firstCheck = id === 'inj' && sections.firstCheck ?
 '오늘 첫 확인 · 기준 목록 저장됨</div>' : '';
 const changes = id === 'inj' && sections.changeCount ?
 '<div style="margin:0 -16px;padding:9px 16px;background:#fff7ed;border-bottom:1px solid #fed7aa;display:flex;align-items:center;gap:10px">' +
-'<strong style="color:#c2410c">변경 ' + sections.changeCount + '건</strong><span style="flex:1"></span>' +
+'<div><strong style="color:#c2410c">변경 ' + sections.changeCount + '건</strong>' +
+(sections[0].reviewNote ? '<div style="font-size:13px;color:#9a3412">' + esc(sections[0].reviewNote) + '</div>' : '') +
+'</div><span style="flex:1"></span>' +
 '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #c2410c;border-radius:6px;background:#fff;color:#c2410c">변경 확인</button></div>' : '';
 body.innerHTML = sortControl + refresh + firstCheck + changes + render(ordered);
 body.querySelectorAll('[data-sort]').forEach((button) => {

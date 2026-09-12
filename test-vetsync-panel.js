@@ -5,7 +5,7 @@ const vm = require('vm');
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.replace(
   "  if (!location.hostname.endsWith('vetsync4.vetu1.com')) {\n    alert('VetSync 화면에서 눌러주세요.');\n  } else if (window.__VETSYNC_BUTTON) {\n    mountButton();\n    // 화면이 다시 그려지면서 버튼이 사라질 수 있으므로 주기적으로 확인한다\n    setInterval(mountButton, 3000);\n  } else {\n    open();\n  }",
-  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, sortSections };'
+  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, sortSections, latestWeight, pickInj, checkedTime };'
 );
 const context = {};
 vm.createContext(context);
@@ -13,10 +13,10 @@ vm.runInContext(source, context);
 
 const item = (drug, dose, route, times, extra = {}) => ({
   match: drug.toLowerCase(), drug, dose, route, frequency: '', note: '', instruction: '', conditional: false,
-  times: times.map(([tag, hour, order]) => ({ tag, hour, order })), ...extra,
+  times: times.map(([tag, hour, order, cancelled]) => ({ tag, hour, order, cancelled: !!cancelled })), ...extra,
 });
 const patient = (name, predicted, items) => ({
-  pid: name, name, code: '12345', breed: '푸들', cage: 'A1', predicted, items,
+  pid: name, name, code: '12345', breed: '푸들', weight: '5.2 kg', cage: 'A1', predicted, items,
 });
 
 const old = {
@@ -46,17 +46,18 @@ const text = context.__test.asText(sections);
 assert.strictEqual(compared.changes, 5);
 assert.strictEqual((html.match(/처치 업데이트/g) || []).length, 2);
 assert.match(html, /쪼코 \(#12345 · 푸들\)/);
+assert.match(html, /A1 · 5\.2 kg/);
 assert.match(html, /background:#fef08a[^>]+>연장<\/span>/);
 assert.match(html, /SAM <span[^>]+>22mpk→20mpk<\/span> IV/);
 assert.match(html, /<span[^>]+>내일 9시<\/span>/);
-assert.match(html, /line-through[^>]+><u style="font-weight:800">내일 1시<\/u><\/span>/);
+assert.match(html, /line-through[^>]+><u style="font-weight:800">내일 1시<\/u> 취소<\/span>/);
 assert.match(html, /maro 1mpk <u style="font-weight:800">SC<\/u> \(21시\)/);
 assert.match(html, /<span[^>]+>B12 <u style="font-weight:800">IM<\/u> \(18시\)<\/span>/);
 assert.match(html, /퇴원환자 \(#12345 · 푸들\)/);
 assert.match(html, /text-decoration:line-through[^>]+>퇴원<\/span>/);
 assert.match(html, /line-through[^>]+>cefa 20mpk IV \(17시\)<\/span>/);
 assert.ok(!html.includes('>SAM</span>'));
-assert.ok(text.includes('쪼코 (#12345 · 푸들) A1 [연장]'));
+assert.ok(text.includes('쪼코 (#12345 · 푸들) A1 · 5.2 kg [연장]'));
 assert.ok(text.includes('maro 1mpk **__SC__** (21시)'));
 assert.ok(text.includes('~~cefa 20mpk IV (17시)~~'));
 
@@ -88,6 +89,55 @@ assert.ok(sidVariable.includes('(18시)'));
 assert.ok(!sidVariable.includes('(<u style="font-weight:800">18시</u>)'));
 assert.ok(inferredBid.includes('(<u style="font-weight:800">17시</u>, 내일 9시)'));
 assert.ok(inferredTid.includes('(<u style="font-weight:800">21시</u>, 내일 1시, 내일 9시)'));
+
+const cancelledLast = context.__test.toHtml(context.__test.rawItem(item('SAM', '22mpk', 'IV', [
+  ['오늘', 17, 17], ['내일', 1, 101], ['내일', 9, 109, true],
+], { frequency: 'TID' })));
+assert.match(cancelledLast, /line-through[^>]+>내일 9시 취소<\/span>/);
+assert.match(cancelledLast, /color:#c2410c[^>]+>\[마지막 시간 취소\]<\/span>/);
+
+const activeSam = patient('취소변경', false, [item('SAM', '22mpk', 'IV', [
+  ['오늘', 17, 17], ['내일', 1, 101], ['내일', 9, 109],
+], { frequency: 'TID' })]);
+const cancelledSam = patient('취소변경', false, [item('SAM', '22mpk', 'IV', [
+  ['오늘', 17, 17], ['내일', 1, 101], ['내일', 9, 109, true],
+], { frequency: 'TID' })]);
+const cancelledChange = context.__test.compareSnapshot(
+  { patients: { cancelled: cancelledSam } }, { patients: { cancelled: activeSam } }, {}
+);
+assert.strictEqual(cancelledChange.changes, 1);
+assert.strictEqual(cancelledChange.normal[0].updated, true);
+assert.match(context.__test.render([{ heading: '주사', groups: cancelledChange.normal }]), /내일 9시 취소/);
+
+const reviewText = context.__test.asText([{ heading: '주사', reviewNote: '이전 확인 15:03 → 현재 확인 16:12', groups: [] }]);
+assert.ok(reviewText.includes('이전 확인 15:03 → 현재 확인 16:12'));
+assert.strictEqual(context.__test.checkedTime('2026-09-12T06:03:00.000Z'), '15:03');
+
+const weightDetail = { sections: [{ rows: [{
+  measurementRole: 'WEIGHT', displayName: '체중', cells: [
+    { hourSlot: 8, resultSlots: [{ value: '4.8' }] },
+    { hourSlot: 10, resultSlots: [{ value: '5.15 kg' }] },
+  ],
+}] }] };
+const weightChart = { patient: {} };
+assert.strictEqual(context.__test.latestWeight(weightDetail, weightChart), '5.15 kg');
+assert.strictEqual(context.__test.latestWeight({ sections: [] }, weightChart), '- kg');
+
+const skippedChart = {
+  discharged: false, cageLabel: 'A장-1',
+  patient: { patientId: 'p3', name: '취소환자', hospitalPatientCode: '333', breed: '믹스', weight: 6.2 },
+};
+const skippedDetail = { sections: [{ section: 'TREATMENT', rows: [{
+  displayName: 'SAM 22mpk IV TID', instructionText: '', cells: [
+    { hourSlot: 17, status: 'PLANNED' }, { hourSlot: 21, status: 'SKIPPED' },
+  ],
+}] }] };
+const actualRows = context.__test.pickInj(skippedChart, skippedDetail, '2026-09-12', [17, 21], '오늘');
+assert.strictEqual(actualRows.length, 2);
+assert.strictEqual(actualRows[1].cancelled, true);
+assert.strictEqual(actualRows[0].weight, '6.2 kg');
+const predictedRows = context.__test.pickInj(skippedChart, skippedDetail, '2026-09-12', [17, 21], '내일', false);
+assert.strictEqual(predictedRows.length, 1);
 
 const currentBid = patient('기존기록', false, [item('cefa', '20mpk', 'IV', today(21), { frequency: 'BID', note: 'BID' })]);
 const legacyBid = JSON.parse(JSON.stringify(currentBid));
