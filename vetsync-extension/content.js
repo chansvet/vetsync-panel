@@ -139,13 +139,31 @@ const patientCode = code ? (String(code).startsWith('#') ? String(code) : '#' + 
 const info = [weight, patientCode, breed].filter(Boolean).join(' · ');
 return name + (info ? ' (' + info + ')' : '');
 };
+const unextendedBloodRows = (charts, details, nextCharts, date) => {
+const extended = new Set(nextCharts.filter((chart) => !chart.discharged)
+.map((chart) => String(chart.patient.patientId)));
+return charts.flatMap((chart, i) => {
+if (!admitted(chart, details[i], date, 18) || extended.has(String(chart.patient.patientId))) return [];
+const species = { DOG: '강아지', CAT: '고양이' }[chart.patient.species] || chart.patient.species;
+return [{
+title: patientTitle(chart.patient.name, chart.patient.hospitalPatientCode, breedOf(chart.patient)),
+cage: species + ' · ' + (chart.cageLabel || '미지정'),
+sortName: chart.patient.name,
+sortCage: chart.cageLabel || '미지정',
+body: ['연장되지 않음'],
+note: '',
+}];
+});
+};
 async function bloodwork(date) {
-const { charts, details } = await collect(date);
+const afterSix = new Date().getHours() >= 18;
+const targetDate = afterSix ? shift(date, 1) : date;
+const { charts, details } = await collect(targetDate);
 const rows = [];
 let needPrev = false;
 charts.forEach((chart, i) => {
 const detail = details[i];
-if (!admitted(chart, detail, date, DRAW_HOUR)) return;
+if (!admitted(chart, detail, targetDate, DRAW_HOUR)) return;
 const labs = rowsOf(detail).filter((r) => {
 const n = (r.displayName || '').trim();
 if (!LAB.test(n) || NOT_LAB.test(n) || GLUCOSE_ONLY.test(n)) return false;
@@ -168,7 +186,7 @@ needTemp: hasE && !temp,
 });
 });
 if (needPrev) {
-const prev = await collect(shift(date, -1));
+const prev = await collect(shift(targetDate, -1));
 rows.forEach((row) => {
 if (!row.needTemp) return;
 const i = prev.charts.findIndex((c) => c.patient.patientId === row.pid);
@@ -177,7 +195,16 @@ const t = latestTemp(prev.details[i]);
 if (t) row.note = [row.note, '체온 ' + t.v + ' (전날)'].filter(Boolean).join(' / ');
 });
 }
-return [{ heading: date + ' 오전 9시 채혈', groups: rows }];
+const sections = [{
+heading: targetDate + ' 오전 9시 채혈' + (afterSix ? ' · 다음날 차트 기준' : ''),
+groups: rows,
+}];
+if (afterSix) {
+const current = await collect(date);
+const pending = unextendedBloodRows(current.charts, current.details, charts, date);
+if (pending.length) sections.push({ heading: '연장되지 않음', warn: true, groups: pending });
+}
+return sections;
 }
 const isInjection = (name) => {
 const n = (name || '').trim();
@@ -479,9 +506,8 @@ const firstCheck = !previous;
 if (!previous) { saveBaseline(date, snapshot); previous = snapshot; }
 const g = compareSnapshot(snapshot, previous, states);
 const out = [{ heading: date + ' 17시 ~ ' + next + ' 15시 주사', groups: g.normal }];
-if (g.changes) {
-out[0].reviewNote = '이전 확인 ' + checkedTime(previous.checkedAt) + ' → 현재 확인 ' + checkedTime(snapshot.checkedAt);
-}
+out[0].reviewNote = firstCheck ? '현재 확인 ' + checkedTime(snapshot.checkedAt) :
+'이전 확인 ' + checkedTime(previous.checkedAt) + ' → 현재 확인 ' + checkedTime(snapshot.checkedAt);
 if (g.cond.length) out.push({ heading: '조건부', groups: g.cond });
 out.changeCount = g.changes;
 out.changeKinds = g.changeKinds;
@@ -606,7 +632,9 @@ const sortControl =
 'background:' + (sortMode === mode ? '#374151' : '#fff') + ';color:' + (sortMode === mode ? '#fff' : '#374151') + '">' +
 (mode === 'name' ? '이름순' : '장순') + '</button>').join('') + '</div></div>';
 const refresh = id === 'inj' ?
-'<div style="margin:8px 0"><button id="vsp-refresh" style="font:inherit;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff">새로 확인</button></div>' : '';
+'<div style="margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+'<button id="vsp-refresh" style="font:inherit;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff">새로 확인</button>' +
+'<span style="font-size:13px;color:#64748b;font-weight:600">' + esc(sections[0].reviewNote || '현재 확인 시간 미기록') + '</span></div>' : '';
 const firstCheck = id === 'inj' && sections.firstCheck ?
 '<div style="margin:0 -16px;padding:8px 16px;background:#ecfdf5;border-bottom:1px solid #a7f3d0;color:#065f46;font-weight:700">' +
 '오늘 첫 확인 · 기준 목록 저장됨</div>' : '';
@@ -619,7 +647,6 @@ const changes = id === 'inj' && sections.changeCount ?
 '<div style="margin:0 -16px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
 '<div><strong style="color:#1f2937">변경 환자 ' + sections.changeCount + '명</strong>' +
 (kindSummary ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + kindSummary + '</div>' : '') +
-(sections[0].reviewNote ? '<div style="font-size:13px;color:#64748b">' + esc(sections[0].reviewNote) + '</div>' : '') +
 '</div><span style="flex:1"></span>' +
 '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #0f766e;border-radius:6px;background:#fff;color:#0f766e">변경 확인</button></div>' : '';
 body.innerHTML = sortControl + refresh + firstCheck + changes + render(ordered);

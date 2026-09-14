@@ -5,7 +5,7 @@ const vm = require('vm');
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.replace(
   "  if (!location.hostname.endsWith('vetsync4.vetu1.com')) {\n    alert('VetSync 화면에서 눌러주세요.');\n  } else if (window.__VETSYNC_BUTTON) {\n    mountButton();\n    // 화면이 다시 그려지면서 버튼이 사라질 수 있으므로 주기적으로 확인한다\n    setInterval(mountButton, 3000);\n  } else {\n    open();\n  }",
-  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, cache, pickInj, checkedTime };'
+  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, unextendedBloodRows, cache, pickInj, checkedTime };'
 );
 const context = {};
 vm.createContext(context);
@@ -153,6 +153,15 @@ assert.doesNotMatch(cancelledChangeHtml, /내일 9시<\/u> 취소|마지막 시�
 const reviewText = context.__test.asText([{ heading: '주사', reviewNote: '이전 확인 15:03 → 현재 확인 16:12', groups: [] }]);
 assert.ok(reviewText.includes('이전 확인 15:03 → 현재 확인 16:12'));
 assert.strictEqual(context.__test.checkedTime('2026-09-12T06:03:00.000Z'), '15:03');
+
+const bloodChart = {
+  discharged: false, cageLabel: 'A장-3',
+  patient: { patientId: 'not-extended', name: '미연장환자', hospitalPatientCode: '444', breed: '믹스', species: 'DOG' },
+};
+const unextended = context.__test.unextendedBloodRows([bloodChart], [{}], [], '2026-09-12');
+assert.strictEqual(unextended.length, 1);
+assert.deepStrictEqual(Array.from(unextended[0].body), ['연장되지 않음']);
+assert.strictEqual(context.__test.unextendedBloodRows([bloodChart], [{}], [{ ...bloodChart, discharged: false }], '2026-09-12').length, 0);
 
 const weightDetail = { sections: [{ rows: [{
   measurementRole: 'WEIGHT', displayName: '체중', cells: [
