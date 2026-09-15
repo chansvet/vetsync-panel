@@ -99,6 +99,15 @@
     "note": ""
   },
   {
+    "name": "G-CSF (류코스팀)",
+    "dose": 5,
+    "conc": 0.25,
+    "unit": "ug",
+    "sc": true,
+    "concentrationLabel": "150 µg/0.6 mL",
+    "note": "0.02 mL/kg"
+  },
+  {
     "name": "Meloxicam",
     "dose": 0.1,
     "conc": 5,

@@ -9,6 +9,7 @@ const createDoseEngine = (drugs) => {
     ['Omeprazole', '오메프라졸'], ['Carprofen'],
     ['Marbofloxacin', 'marbo', '마보', 'marbocyl'], ['Tramadol', 'tra', '트라마돌'],
     ['Tranexamic acid', 'TXA', '트라넥삼산'], ['Dalteparin', 'dalte', 'datle'],
+    ['G-CSF', 'g-csf', 'gcsf', '류코스팀'],
     ['Meloxicam', 'melo'], ['Meropenem', 'mero'],
   ];
   const byAlias = new Map();
@@ -49,9 +50,10 @@ const createDoseEngine = (drugs) => {
     const conc = drug.conc;
     if (unit !== 'mL' && !(conc > 0)) return fail('농도 확인 필요');
     const volume = value * (perKg ? kg : 1) * (unit === 'ug' ? 0.001 : 1) / (unit === 'mL' ? 1 : conc);
-    const doseUnit = perKg ? (unit === 'mg' ? 'mpk' : unit + '/kg') : unit;
+    const doseUnit = perKg ? (unit === 'mg' ? 'mpk' : unit === 'ug' ? 'µg/kg' : unit + '/kg') : unit;
     const doseText = value + ' ' + doseUnit + (origin === '기본' ? '(기본)' : '');
-    const concText = unit === 'mL' ? '' : conc + (drug.unit === 'IU' ? ' IU/mL' : ' mg/mL');
+    const concText = unit === 'mL' ? '' : (drug.concentrationLabel ||
+      conc + (drug.unit === 'IU' ? ' IU/mL' : ' mg/mL'));
     const nonDefault = origin === '차트' && perKg && unit === (drug.unit || 'mg') && value !== drug.dose;
     return { volume, text: volumeText(volume) + ' mL', doseText, concText, nonDefault,
       basis: doseText + (concText ? ' · ' + concText : '') };

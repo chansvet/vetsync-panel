@@ -17,6 +17,10 @@ assert.equal(engine.calculate('SAM', '', '- kg').volume, null);
 assert.equal(engine.calculate('SAM', '', '5 kg', '30mpk').volume, null);
 assert.equal(engine.calculate('Dalteparin', '150IU/kg', '5 kg').text, '0.30 mL');
 assert.equal(engine.calculate('Dalteparin', '150mpk', '5 kg').volume, null);
+assert.equal(engine.find('류코스팀').name, 'G-CSF');
+assert.equal(engine.calculate('g-csf', '', '1 kg').text, '0.02 mL');
+assert.equal(engine.calculate('G-CSF', '5ug/kg', '4 kg').text, '0.08 mL');
+assert.equal(engine.calculate('G-CSF', '', '4 kg').basis, '5 µg/kg(기본) · 150 µg/0.6 mL');
 assert.equal(engine.calculate('SAM', '0mpk', '5 kg').volume, null);
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")) +
