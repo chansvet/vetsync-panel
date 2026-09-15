@@ -120,5 +120,11 @@
     "conc": 50,
     "sc": false,
     "note": ""
+  },
+  {
+    "name": "Chlorpheniramine",
+    "dose": 0.2,
+    "conc": 2,
+    "sc": false
   }
 ]

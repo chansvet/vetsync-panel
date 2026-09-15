@@ -10,6 +10,7 @@ const createDoseEngine = (drugs) => {
     ['Marbofloxacin', 'marbo', '마보', 'marbocyl'], ['Tramadol', 'tra', '트라마돌'],
     ['Tranexamic acid', 'TXA', '트라넥삼산'], ['Dalteparin', 'dalte', 'datle'],
     ['G-CSF', 'g-csf', 'gcsf', '류코스팀'],
+    ['Chlorpheniramine', 'chloropheniramine', 'chlorpeniramine', '클로르페니라민'],
     ['Meloxicam', 'melo'], ['Meropenem', 'mero'],
   ];
   const byAlias = new Map();

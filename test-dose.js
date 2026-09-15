@@ -24,7 +24,7 @@ assert.equal(engine.calculate('G-CSF', '', '4 kg').basis, '5 µg/kg(기본) · 1
 assert.equal(engine.calculate('SAM', '0mpk', '5 kg').volume, null);
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")) +
-  'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,isInjection,pickInj};})();';
+  'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,isInjection,pickInj,isLabAtDraw};})();';
 const ctx = { doseEngine: engine };
 vm.runInNewContext(source, ctx);
 assert.equal(ctx.api.weightValue('오후 9시 퇴원'), '');
@@ -42,6 +42,16 @@ for (const name of ['SAM 22 IV','Famo 1 IV','cerenia 1 SID']) {
   assert.ok(engine.calculate(parsed.drug,parsed.dose,'5 kg').volume>0);
 }
 assert.equal(ctx.api.parseDrug('famo .8 mpk IV').dose, '.8mpk');
+assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('SAM22'))),
+  {drug:'SAM',dose:'22',route:'',frequency:'',note:''});
+assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('famo1'))),
+  {drug:'famo',dose:'1',route:'',frequency:'',note:''});
+assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('Maropitant 1mpk IV PRN'))),
+  {drug:'Maropitant',dose:'1mpk',route:'IV',frequency:'',note:''});
+assert.equal(ctx.api.isInjection('H/S + Hepamerz 1amp + 호의주1A'), false);
+assert.equal(ctx.api.isInjection('FLK / 0.45N/S + vit B,C 1A, tau 5ml, meto 1.6ml'), false);
+assert.equal(ctx.api.isLabAtDraw({displayName:'간이혈당',cells:[{hourSlot:9,status:'PLANNED'}]}), true);
+assert.equal(ctx.api.isLabAtDraw({displayName:'간이혈당',cells:[{hourSlot:8,status:'PLANNED'}]}), false);
 assert.equal(ctx.api.doseFromInstruction('22mpk'), '22mpk');
 assert.equal(ctx.api.doseFromInstruction('용량: 22'), '22');
 assert.equal(ctx.api.doseFromInstruction('2번'), '');
@@ -51,6 +61,20 @@ const instructionOnlyDetail = { sections: [{ section: 'TREATMENT', rows: [{
 }]}] };
 const instructionOnlyChart = { discharged: false, cageLabel: 'A1', patient: { patientId: 'instruction-only', name: '지시사항', hospitalPatientCode: '1', breed: '믹스' } };
 assert.equal(ctx.api.pickInj(instructionOnlyChart, instructionOnlyDetail, '2026-09-16', [17], '오늘', true, '5 kg')[0].dose, '22mpk');
+const slashDetail = { sections: [{ section: 'TREATMENT', rows: [{
+  displayName: 'Chlorpheniramine 0.2 / Maropitant 1', cells: [{ hourSlot: 17, status: 'PLANNED' }],
+}]}] };
+const slashRows = ctx.api.pickInj(instructionOnlyChart, slashDetail, '2026-09-16', [17], '오늘', true, '5 kg');
+assert.deepEqual(JSON.parse(JSON.stringify(slashRows.map((item) => [item.drug, item.dose]))),
+  [['Chlorpheniramine', '0.2'], ['Maropitant', '1']]);
+assert.deepEqual(JSON.parse(JSON.stringify(slashRows.map((item) => engine.calculate(item.drug, item.dose, '5 kg').text))),
+  ['0.50 mL', '0.50 mL']);
+const prnDetail = { sections: [{ section: 'TREATMENT', rows: [{
+  displayName: 'Maropitant 1mpk IV', instructionText: 'PRN', cells: [{ hourSlot: 17, status: 'PLANNED' }],
+}]}] };
+const prnRows = ctx.api.pickInj(instructionOnlyChart, prnDetail, '2026-09-16', [17], '오늘', true, '5 kg');
+assert.equal(prnRows[0].instruction, '');
+assert.equal(ctx.api.makeSnapshot(prnRows).patients['instruction-only'].items[0].conditional, true);
 const conflictingDetail = { sections: [{ section: 'TREATMENT', rows: [{
   displayName: 'SAM 22mpk IV', instructionText: '30mpk', cells: [{ hourSlot: 17, status: 'PLANNED' }],
 }]}] };

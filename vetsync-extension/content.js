@@ -12,6 +12,7 @@ const aliases = [
 ['Marbofloxacin', 'marbo', '마보', 'marbocyl'], ['Tramadol', 'tra', '트라마돌'],
 ['Tranexamic acid', 'TXA', '트라넥삼산'], ['Dalteparin', 'dalte', 'datle'],
 ['G-CSF', 'g-csf', 'gcsf', '류코스팀'],
+['Chlorpheniramine', 'chloropheniramine', 'chlorpeniramine', '클로르페니라민'],
 ['Meloxicam', 'melo'], ['Meropenem', 'mero'],
 ];
 const byAlias = new Map();
@@ -184,6 +185,12 @@ const doseEngine = createDoseEngine([
 "conc": 50,
 "sc": false,
 "note": ""
+},
+{
+"name": "Chlorpheniramine",
+"dose": 0.2,
+"conc": 2,
+"sc": false
 }
 ]
 );
@@ -196,7 +203,6 @@ const ACTIVE = ['PLANNED', 'COMPLETED', 'IN_PROGRESS'];
 const CANCELLED_CELL = ['SKIPPED', 'CANCELLED'];
 const LAB = /혈검|혈액검사|도말|가스|전해질|신4|신장\s*4종|간4|간\s*4종|간이혈당|\bCBC\b|\bCRP\b|\bSAA\b|\bfSAA\b|\bSDMA\b|\bTnI\b|\bCPL\b|\bfPL\b|\bFPL\b|\bPCV\b|\bCK\b|\bChem\d*\b|\bgas\b|\blyte\b|\bTBIL\b|\bT\.?bil\b|\bBUN\b|\bCrea\b|\bALT\b|\bALP\b|\bALB\b|\bphos\b|\bTP\s*\/\s*A\w*\b|\bLactate\b/i;
 const NOT_LAB = /혈압|항혈전|고혈압|이뇨|수혈|요배양|요검사|뇨검사|요카|초음파|방사선|조직검사|항감테|내복|아이스팩|음수|배뇨|배변|CRI|스푼|산소|O2\s*supply/i;
-const GLUCOSE_ONLY = /^(간이혈당|혈당|혈당\s*체크)$/;
 const ELECTROLYTE = /전해질|가스|\bgas\b|\blyte\b/i;
 const HANDLING = /팔|앞다리|뒷다리|후지|전지|경정맥|채혈|지혈|각각|나비침|희석|냉장/;
 const KNOWN = /SAM\s*\d|\bSAM\b|설밤|\bfamo\w*|파모|\bmaro\w*|세레니아|cerenia|\bmero\w*|\bmarbo\w*|마보|\benro\w*|\bcefa\w*|\bcepha\w*|cefotaxime|convenia|\bdalte\w*|\bdatle\w*|tramadol|트라마돌|\btra\s*\d|vit\.?\s?k|비타민k|\bmelo\w*|dexa\w*|덱사|ondansetron|\bondan\w*|온단세트론|파노퀠|calcium\s*gluconate|칼슘글루코네이트|칼슘글루콘산|\bfuro\w*|라식스|butor\w*|carprofen|tranexamic|\bTXA\b|amoxi\w*|clinda\w*|\bgent\w*|prednisolone|프레드|solu|atropine|glyco\w*|호의주|타우린|iron\s*dextran|hydroxocobalamin|cobalamin|G-?csf|\bDPO\b|romiplostim|로미플로스팀|프로롱갈|중탄산나트륨|esomeprazol\w*|eosmeprazol\w*|omeprazol\w*|오메프라졸|chlor\w*phenir\w*|클로르페니라민|\bleve\s*\d|levetiracetam|pheno\s*\d|phenobarbital|\bmeto\b/i;
@@ -209,6 +215,7 @@ const EYE = /양안|우안|좌안|점안|안약|리포직|포비돈|^V\d|^T\d|\b
 const NOTINJ = /드레싱|소독|사진|방사선|초음파|혈검|혈액검사|혈당|체중|체온|심박|호흡|혈압|구토|배변|배뇨|식이|산소|음수|물그릇|핫팩|자세|산책|라인|배액|세정|점이액|교체|측정|확인|보정|면회|목욕|미용|밴드|붕대|카테터|수혈|튜브|네뷸|가습|강급|급여|스푼|연고|스프레이|허니|술부|귀\s?세정|cryo|속도|변경|기입|흉방|요배양|검사|\bCRP\b/i;
 const CRI = /\bcri\b|\/\s*hr\b|시간당/i;
 const COND = /필요시|prn|경우\s*x|없을\s*경우|이면|이하시|이상시|시\s*연결|시\s*중단|보류/i;
+const FLUID_ORDER = /^\s*(?:H\s*\/\s*S|HS|FLK|(?:0\.\d+%?\s*)?N\s*\/\s*S|0\.45\s*NaCl)\b/i;
 const ROUTINE = [17, 21, 1, 9];
 const ROUTINE_BY_FREQUENCY = { BID: [21, 9], TID: [17, 1, 9] };
 const U0 = '\u0001', U1 = '\u0002';
@@ -248,6 +255,11 @@ return (cache[date] = { charts: list.items, details });
 };
 const rowsOf = (d) => (d.sections || []).flatMap((s) => s.rows || []);
 const treatRows = (d) => (d.sections || []).filter((s) => s.section === 'TREATMENT').flatMap((s) => s.rows || []);
+const isLabAtDraw = (row) => {
+const name = (row.displayName || '').trim();
+return LAB.test(name) && !NOT_LAB.test(name) &&
+(row.cells || []).some((cell) => cell.hourSlot === DRAW_HOUR && ACTIVE.includes(cell.status));
+};
 const admitted = (chart, detail, date, hour) => {
 if (!chart.discharged) return true;
 if (!detail.dischargedAt) return false;
@@ -353,11 +365,7 @@ let needPrev = false;
 charts.forEach((chart, i) => {
 const detail = details[i];
 if (!admitted(chart, detail, targetDate, DRAW_HOUR)) return;
-const labs = rowsOf(detail).filter((r) => {
-const n = (r.displayName || '').trim();
-if (!LAB.test(n) || NOT_LAB.test(n) || GLUCOSE_ONLY.test(n)) return false;
-return (r.cells || []).some((c) => c.hourSlot === DRAW_HOUR && ACTIVE.includes(c.status));
-});
+const labs = rowsOf(detail).filter(isLabAtDraw);
 if (!labs.length) return;
 const hasE = labs.some((r) => ELECTROLYTE.test(r.displayName));
 const temp = hasE ? latestTemp(detail) : null;
@@ -398,6 +406,7 @@ return sections;
 const isInjection = (name) => {
 const n = (name || '').trim();
 if (!n || NONAME.test(n)) return false;
+if (FLUID_ORDER.test(n)) return false;
 if (SKIP.test(n) || PROC.test(n) || CRI.test(n) || EYE.test(n) || NOTINJ.test(n) || ORAL.test(n)) return false;
 return ROUTE.test(n) || KNOWN.test(n) || /vitamin\s*k/i.test(n);
 };
@@ -414,6 +423,8 @@ function parseDrug(name) {
 let s = (name || '').trim();
 const notes = [];
 const frequency = frequencyFrom(s);
+s = s.replace(/^(sam|famo)(?=\d)/i, '$1 ');
+s = s.replace(/\bprn\b/ig, ' ');
 s = s.replace(/(\d+(?:\.\d+)?\s*\S*)\s*(?:->|→)\s*(\d)/g, '$2').replace(/\(\s*(\d+(?:\.\d+)?)\s*\)/g, ' $1 ');
 const pull = (re) => {
 const m = s.match(re);
@@ -444,8 +455,8 @@ return bare ? bare[1] : '';
 };
 const normalizedDose = (dose) => String(dose || '').toLowerCase().replace(/\s/g, '').replace('mg/kg', 'mpk').replace(/^\./, '0.');
 const splitDrugs = (name) => {
-if (!name.includes(',')) return [name];
-const parts = name.split(/,\s*/).map((s) => s.trim()).filter(Boolean);
+if (!name.includes(',') && !/\s+\/\s+/.test(name)) return [name];
+const parts = name.split(/,\s*|\s+\/\s+/).map((s) => s.trim()).filter(Boolean);
 return parts.length > 1 && parts.every((p) => ROUTE.test(p) || KNOWN.test(p)) ? parts : [name];
 };
 function pickInj(chart, detail, date, hours, tag, includeCancelled = true, selectedWeight = '') {
@@ -464,6 +475,7 @@ if (!admitted(chart, detail, date, cell.hourSlot)) return;
 parts.forEach((p, i) => {
 const parsed = parseDrug(p);
 const instructionDose = doseFromInstruction(row.instructionText);
+const instruction = String(row.instructionText || '').replace(/\bprn\b/ig, ' ').replace(/\s+/g, ' ').trim();
 const doseConflict = !!(parsed.dose && instructionDose && normalizedDose(parsed.dose) !== normalizedDose(instructionDose));
 out.push({
 pid: String(chart.patient.patientId), patient: chart.patient.name, code: chart.patient.hospitalPatientCode,
@@ -471,7 +483,7 @@ breed: breedOf(chart.patient), weight,
 cage: chart.cageLabel || '미지정', tag, hour: cell.hourSlot,
 order: (tag === '내일' ? 100 : 0) + cell.hourSlot,
 cancelled: isCancelled,
-key: name + '#' + i, raw: name, instruction: row.instructionText || '', ...parsed,
+key: name + '#' + i, raw: name, instruction, conditional: COND.test(name + ' ' + (row.instructionText || '')), ...parsed,
 dose: parsed.dose || instructionDose, doseConflict,
 frequency: parsed.frequency || rowFrequency,
 });
@@ -523,7 +535,7 @@ const key = JSON.stringify([drug, r.dose.replace(/mg\/kg/i, 'mpk'), r.route, r.f
 const item = p.items[key] = p.items[key] || {
 match: normDrug(drug) || normDrug(r.raw), drug, dose: r.dose.replace(/mg\/kg/i, 'mpk'), route: r.route, frequency: r.frequency,
 note: r.note, instruction: r.instruction, doseConflict: !!r.doseConflict,
-conditional: COND.test(r.raw + ' ' + r.instruction), times: [],
+conditional: !!r.conditional || COND.test(r.raw + ' ' + r.instruction), times: [],
 };
 if (!item.times.some((t) => timeStateKey(t) === timeStateKey(r))) {
 item.times.push({ tag: r.tag, hour: r.hour, order: r.order, cancelled: !!r.cancelled });
