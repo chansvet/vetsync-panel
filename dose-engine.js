@@ -1,0 +1,55 @@
+// Data is exported from vet_calculator's DEFAULT_DRUGS by sync-drug-data.js.
+const createDoseEngine = (drugs) => {
+  const normalize = (s) => String(s || '').toLowerCase().replace(/[\s._-]+/g, '');
+  const aliases = [
+    ['SAM', '유니설암', '설밤'], ['Famotidine', 'famo', '파모', '모틴'],
+    ['Maropitant', 'maro', 'cerenia', '세레니아'], ['Enrofloxacin', 'enro', '바이트릴'],
+    ['Vitamin K', 'vit k', '비타민k'], ['Metoclopramide', 'meto'],
+    ['Cefazolin', 'cefa'], ['Ondansetron', 'ondan', '온단세트론'],
+    ['Omeprazole', '오메프라졸'], ['Carprofen'],
+    ['Marbofloxacin', 'marbo', '마보', 'marbocyl'], ['Tramadol', 'tra', '트라마돌'],
+    ['Tranexamic acid', 'TXA', '트라넥삼산'], ['Dalteparin', 'dalte', 'datle'],
+    ['Meloxicam', 'melo'], ['Meropenem', 'mero'],
+  ];
+  const byAlias = new Map();
+  aliases.forEach(([name, ...other]) => {
+    const record = drugs.find((d) => d.name.split(' (')[0] === name);
+    if (record) [name, ...other].forEach((a) => byAlias.set(normalize(a), { ...record, name }));
+  });
+  const find = (name) => byAlias.get(normalize(name));
+  const volumeText = (n) => n >= 0.01 ? n.toFixed(2) : n.toPrecision(2);
+  const calculate = (name, written, weight, instruction = '') => {
+    const drug = find(name);
+    const fail = (reason) => ({ text: reason, basis: written || '', volume: null });
+    const dose = String(written || '').replace(/\s/g, '').toLowerCase();
+    // Conflicting or additional dosing instructions must not silently use a default.
+    if (/\d\s*(?:mpk|mg|ml|mcg|ug|iu|cc)|희석|농도/i.test(instruction)) return fail('용량 확인 필요');
+    if (/^\d+(?:\.\d+)?(?:ml|cc)$/.test(dose)) {
+      const volume = parseFloat(dose);
+      return volume > 0 ? { volume, text: volumeText(volume) + ' mL', basis: '차트 mL' } : fail('용량 확인 필요');
+    }
+    if (!drug) return fail('농도 미등록');
+    let value = drug.dose, unit = drug.unit || 'mg', perKg = true, origin = '기본';
+    if (dose) {
+      const match = dose.match(/^(\d+(?:\.\d+)?)(mpk|mg\/kg|gpk|ug\/kg|mcg\/kg|iu\/kg|u\/kg|ml\/kg|mg|mg\/dog|mg\/cat)$/);
+      if (!match) return fail('용량 확인 필요');
+      value = Number(match[1]); origin = '차트';
+      const u = match[2];
+      perKg = !['mg', 'mg/dog', 'mg/cat'].includes(u);
+      unit = /^(iu|u)\//.test(u) ? 'IU' : /^(ug|mcg)\//.test(u) ? 'ug' : u === 'ml/kg' ? 'mL' : 'mg';
+      if (u === 'gpk') value *= 1000;
+    }
+    const kg = /^\d+(?:\.\d+)? kg$/.test(weight || '') ? parseFloat(weight) : NaN;
+    if (perKg && !(kg > 0)) return fail('체중 확인 필요');
+    if (!(value > 0)) return fail('용량 확인 필요');
+    if (unit !== 'mL' && ((unit === 'IU') !== (drug.unit === 'IU'))) return fail('단위 확인 필요');
+    const conc = drug.conc;
+    if (unit !== 'mL' && !(conc > 0)) return fail('농도 확인 필요');
+    const volume = value * (perKg ? kg : 1) * (unit === 'ug' ? 0.001 : 1) / (unit === 'mL' ? 1 : conc);
+    const doseUnit = perKg ? (unit === 'mg' ? 'mpk' : unit + '/kg') : unit;
+    return { volume, text: volumeText(volume) + ' mL', basis: value + ' ' + doseUnit + (origin === '기본' ? '(기본)' : '') +
+      (unit === 'mL' ? '' : ' · ' + conc + (drug.unit === 'IU' ? ' IU/mL' : ' mg/mL')) };
+  };
+  return { find, calculate };
+};
+if (typeof module !== 'undefined') module.exports = createDoseEngine;

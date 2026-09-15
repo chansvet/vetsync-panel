@@ -120,6 +120,13 @@ dischargedAt         퇴원 처리 시각. 퇴원 안 했으면 null
 `Datle`(Dalteparin), `eosmeprazole`, `chloropheniramine`, `tranexamic acie`,
 `cefotaxime 50mg/k` 같은 것들이 실제로 있다. 새 표기를 발견하면 정규식에 추가한다.
 
+## 2.0 추가 규칙
+
+주사 계산·별칭·복구 방법은 V2.md를 참조한다. 2.0은 원문 표기를 등록된 대표 약물명으로
+통일하고 약물·시간·mL를 표시한다. 원문 용량과 지시는 계산 근거에 유지한다.
+단위 없는 숫자는 자동으로 mpk로 가정하지 않는다. 계산기 기본 자료는 drug-defaults.json으로
+내보내며, 앱 실행 중 다른 사이트에서 자료를 읽지 않는다. 기존 1.0.22는 rollback/에 보존한다.
+
 ## 채혈 목록 규칙
 
 - 오전 9시 오더만 본다.

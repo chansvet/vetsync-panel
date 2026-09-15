@@ -1,0 +1,115 @@
+[
+  {
+    "name": "SAM (유니설암)",
+    "dose": 22,
+    "conc": 150,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Famotidine (모틴)",
+    "dose": 1,
+    "conc": 10,
+    "sc": false,
+    "note": "1 or 0.5 mg/kg"
+  },
+  {
+    "name": "Maropitant",
+    "dose": 1,
+    "conc": 10,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Enrofloxacin (바이트릴)",
+    "dose": 5,
+    "conc": 25,
+    "sc": true,
+    "note": ""
+  },
+  {
+    "name": "Vitamin K",
+    "dose": 1,
+    "conc": 10,
+    "sc": true,
+    "note": ""
+  },
+  {
+    "name": "Metoclopramide",
+    "dose": 0.5,
+    "conc": 5,
+    "sc": true,
+    "note": ""
+  },
+  {
+    "name": "Cefazolin",
+    "dose": 22,
+    "conc": 200,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Ondansetron",
+    "dose": 0.5,
+    "conc": 2,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Omeprazole",
+    "dose": 1,
+    "conc": 10,
+    "sc": false,
+    "note": "차광필요"
+  },
+  {
+    "name": "Carprofen",
+    "dose": 2.2,
+    "conc": 50,
+    "sc": true,
+    "note": "2.2 or 4.4 mg/kg"
+  },
+  {
+    "name": "Marbofloxacin (Marbocyl)",
+    "dose": 2,
+    "conc": 10,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Tramadol",
+    "dose": 4,
+    "conc": 50,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Tranexamic acid (트라넥삼산)",
+    "dose": 10,
+    "conc": 100,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Dalteparin",
+    "dose": 150,
+    "conc": 2500,
+    "unit": "IU",
+    "sc": true,
+    "note": ""
+  },
+  {
+    "name": "Meloxicam",
+    "dose": 0.1,
+    "conc": 5,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Meropenem",
+    "dose": 8.5,
+    "conc": 50,
+    "sc": false,
+    "note": ""
+  }
+]

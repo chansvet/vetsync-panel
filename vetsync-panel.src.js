@@ -9,6 +9,7 @@
  */
 
 (() => {
+  /* DOSE_ENGINE */
   const API = 'https://api-vetsync4.vetu1.com/api/v1';
   const HOSPITAL_ID = '24';
   const DRAW_HOUR = 9;
@@ -49,7 +50,8 @@
   const A0 = '\uE000', A1 = '\uE001';
   const D0 = '\uE002', D1 = '\uE003';
   const B0 = '\uE004', B1 = '\uE005';
-  const INJ_BASELINE = 'vetsync-injection-baseline-v1:';
+  const M0 = '\uE006', M1 = '\uE007', S0 = '\uE008', S1 = '\uE009';
+  const INJ_BASELINE = 'vetsync-injection-baseline-v2:';
 
   const pad = (n) => String(n).padStart(2, '0');
   const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -241,7 +243,7 @@
     const n = (name || '').trim();
     if (!n || NONAME.test(n)) return false;
     if (SKIP.test(n) || PROC.test(n) || CRI.test(n) || EYE.test(n) || NOTINJ.test(n) || ORAL.test(n)) return false;
-    return ROUTE.test(n) || KNOWN.test(n);
+    return ROUTE.test(n) || KNOWN.test(n) || /vitamin\s*k/i.test(n);
   };
 
   const frequencyFrom = (text) => {
@@ -275,7 +277,8 @@
       const b = s.match(/(?:^|\s)(\d+(?:\.\d+)?)(?=\s|$)/);
       if (b) { dose = b[1]; s = s.replace(b[0], ' '); }
     }
-    return { drug: s.replace(/\s+/g, ' ').trim().replace(/[,\-]+$/, ''), dose, route, frequency, note: notes.filter(Boolean).join(', ') };
+    const drug = s.replace(/\s+/g, ' ').trim().replace(/[,\-]+$/, '');
+    return { drug, dose, route, frequency, note: notes.filter(Boolean).join(', ') };
   }
 
   const splitDrugs = (name) => {
@@ -352,8 +355,11 @@
       if (r.cage !== '미지정') p.cage = r.cage;
       if (r.weight && r.weight !== '- kg') p.weight = r.weight;
       if (r.predicted) p.predicted = true;
-      const item = p.items[r.key] = p.items[r.key] || {
-        match: normDrug(r.drug) || normDrug(r.raw), drug: r.drug, dose: r.dose, route: r.route, frequency: r.frequency,
+      const registered = typeof doseEngine !== 'undefined' && doseEngine.find(r.drug);
+      const drug = registered ? registered.name : r.drug;
+      const key = JSON.stringify([drug, r.dose.replace(/mg\/kg/i, 'mpk'), r.route, r.frequency, r.note, r.instruction]);
+      const item = p.items[key] = p.items[key] || {
+        match: normDrug(drug) || normDrug(r.raw), drug, dose: r.dose.replace(/mg\/kg/i, 'mpk'), route: r.route, frequency: r.frequency,
         note: r.note, instruction: r.instruction, conditional: COND.test(r.raw + ' ' + r.instruction), times: [],
       };
       if (!item.times.some((t) => timeStateKey(t) === timeStateKey(r))) {
@@ -363,18 +369,48 @@
     Object.values(patients).forEach((p) => {
       p.items = Object.values(p.items).map((item) => ({
         ...item, times: item.times.sort((a, b) => a.order - b.order),
+        calculation: typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, p.weight, item.instruction) : undefined,
       }));
     });
     return { checkedAt: new Date().toISOString(), patients };
   }
 
+  const preparationItem = (item, prev = null, kind = '') => {
+    const calc = item.calculation;
+    const active = (x) => x.times.filter((t) => !t.cancelled);
+    const oldTimes = new Map((prev ? active(prev) : []).map((t) => [timeKey(t), t]));
+    const newTimes = new Set(active(item).map(timeKey));
+    const changedDose = prev && (JSON.stringify(calc) !== JSON.stringify(prev.calculation) || item.dose !== prev.dose || item.route !== prev.route);
+    const actions = [];
+    if (kind === 'removed') actions.push(deletedLabel() + ' 빼기');
+    else if (kind === 'added') {
+      if (active(item).length) actions.push(addedLabel() + ' 추가 준비');
+    } else if (prev) {
+      const added = active(item).filter((t) => !oldTimes.has(timeKey(t)));
+      const removed = active(prev).filter((t) => !newTimes.has(timeKey(t)));
+      if (added.length) actions.push(addedLabel() + ' 추가 준비: ' + added.map(plainTimeLabel).join(', '));
+      if (removed.length) actions.push(deletedLabel() + ' 빼기: ' + removed.map(plainTimeLabel).join(', '));
+      if (changedDose && active(item).some((t) => oldTimes.has(timeKey(t)))) actions.push(orange('용량·경로 재확인'));
+    }
+    const times = orderedTimeText(item.times, item);
+    let amount = calc.text;
+    if (changedDose && prev.calculation && prev.calculation.text !== calc.text) amount = beforeValue(prev.calculation.text) + ' → ' + orange(calc.text);
+    const route = prev && item.route !== prev.route ? beforeValue(routeLabel(prev.route) || '미기재') + '→' + orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
+    const main = M0 + item.drug + M1 + ' · ' + times + ' · ' + M0 + amount + M1 + (route ? ' · ' + route : '');
+    const basis = calc.basis + (item.note || item.instruction ? ' · ' + [item.note, item.instruction].filter(Boolean).join(', ') : '');
+    return (actions.length ? actions.join(' / ') + '\n' : '') + (kind === 'removed' ? cancelled(main) : main) +
+      (basis ? '\n' + S0 + basis + S1 : '');
+  };
+
   const rawItem = (item) => {
+    if (item.calculation) return preparationItem(item);
     const label = [item.drug, item.dose, routeLabel(item.route)].filter(Boolean).join(' ');
     const extra = [item.note, item.instruction].filter(Boolean).join(', ');
     return label + ' (' + orderedTimeText(item.times, item) + ')' + (extra ? ' [' + extra + ']' : '');
   };
 
   function changedItem(item, prev, kind) {
+    if (item.calculation) return preparationItem(item, prev, kind);
     let text;
     if (kind === 'added') text = addedLabel() + ' ' + rawItem(item);
     else if (kind === 'removed') text = deletedLabel() + ' ' + cancelled(rawItem(item));
@@ -413,6 +449,7 @@
   }
 
   const sameItem = (a, b) => a.drug === b.drug && a.dose === b.dose && a.route === b.route &&
+    JSON.stringify(a.calculation) === JSON.stringify(b.calculation) &&
     frequencyOf(a) === frequencyOf(b) &&
     a.note === b.note && a.instruction === b.instruction &&
     a.times.map(timeStateKey).join(',') === b.times.map(timeStateKey).join(',');
@@ -565,6 +602,9 @@
   // ---- 화면 ----
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   const toHtml = (s) => esc(s)
+    .replace(/\n/g, '<br>')
+    .split(M0).join('<strong style="font-size:16px">').split(M1).join('</strong>')
+    .split(S0).join('<span style="font-size:12px;color:#64748b">').split(S1).join('</span>')
     .split(U0).join('<u style="font-weight:800">').split(U1).join('</u>')
     .split(E0).join('<strong style="font-weight:800;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px">')
     .split(E1).join('</strong>')
@@ -582,6 +622,8 @@
       g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
     ).join('\n')
   ).join('\n\n')
+    .split(M0).join('**').split(M1).join('**')
+    .split(S0).join('').split(S1).join('')
     .split(U0).join('**__').split(U1).join('__**')
     .split(E0).join('**__').split(E1).join('__**')
     .split(O0).join('**').split(O1).join('**')
@@ -662,7 +704,7 @@
       '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
       TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
         'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-      '<span style="flex:1"></span>' +
+      '<span style="flex:1"></span><span style="font-size:11px">2.0</span>' +
       '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
       '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
       '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';

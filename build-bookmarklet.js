@@ -6,7 +6,8 @@
  */
 const fs = require('fs');
 
-const src = fs.readFileSync('vetsync-panel.src.js', 'utf8');
+const src = fs.readFileSync('vetsync-panel.src.js', 'utf8').replace('/* DOSE_ENGINE */',
+  fs.readFileSync('dose-engine.js', 'utf8') + '\nconst doseEngine = createDoseEngine(' + fs.readFileSync('drug-defaults.json', 'utf8') + ');');
 
 // 블록 주석과 줄 전체가 주석인 줄만 걷어낸다. 문자열이나 정규식 안의 // 는 건드리지 않는다.
 const stripped = src
@@ -24,7 +25,7 @@ fs.writeFileSync('vetsync-panel.bookmarklet.txt', url);
 
 const USERSCRIPT_BASE = 'https://chansvet.github.io/vetsync-panel';
 const AUTO_URL = 'https://vetsync4.vetu1.com/?vetsync-panel=1';
-const USERSCRIPT_VERSION = '1.0.22';
+const USERSCRIPT_VERSION = '2.0.0';
 const userscriptMeta = `// ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
@@ -190,6 +191,7 @@ const page = `<!doctype html>
     <h2>안 될 때</h2>
     <p class="note">VetSync 화면이 아닌 곳에서 누르면 안내창이 뜹니다. 로그인이 풀렸으면 다시 로그인한 뒤 누르세요. 접속 토큰은 15분마다 갱신되므로 화면을 열어둔 채로 쓰면 문제없습니다.</p>
   </section>
+<p><a href="rollback/">이전 버전 1.0.22로 복구</a></p>
 </main>
 <script>
   const url = document.getElementById('bookmarklet-link').getAttribute('href');

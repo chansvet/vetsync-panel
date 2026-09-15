@@ -1,15 +1,13 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.0.0
+// @version      1.0.22
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
 // @inject-into  auto
 // @noframes
 // @grant        none
-// @updateURL    https://chansvet.github.io/vetsync-panel/vetsync-auto.meta.js
-// @downloadURL  https://chansvet.github.io/vetsync-panel/vetsync-auto.user.js
 // ==/UserScript==
 
 (() => {
@@ -25,175 +23,6 @@
     if (buttonOnly) window.__VETSYNC_BUTTON = true;
     else delete window.__VETSYNC_BUTTON;
     (() => {
-    const createDoseEngine = (drugs) => {
-    const normalize = (s) => String(s || '').toLowerCase().replace(/[\s._-]+/g, '');
-    const aliases = [
-    ['SAM', '유니설암', '설밤'], ['Famotidine', 'famo', '파모', '모틴'],
-    ['Maropitant', 'maro', 'cerenia', '세레니아'], ['Enrofloxacin', 'enro', '바이트릴'],
-    ['Vitamin K', 'vit k', '비타민k'], ['Metoclopramide', 'meto'],
-    ['Cefazolin', 'cefa'], ['Ondansetron', 'ondan', '온단세트론'],
-    ['Omeprazole', '오메프라졸'], ['Carprofen'],
-    ['Marbofloxacin', 'marbo', '마보', 'marbocyl'], ['Tramadol', 'tra', '트라마돌'],
-    ['Tranexamic acid', 'TXA', '트라넥삼산'], ['Dalteparin', 'dalte', 'datle'],
-    ['Meloxicam', 'melo'], ['Meropenem', 'mero'],
-    ];
-    const byAlias = new Map();
-    aliases.forEach(([name, ...other]) => {
-    const record = drugs.find((d) => d.name.split(' (')[0] === name);
-    if (record) [name, ...other].forEach((a) => byAlias.set(normalize(a), { ...record, name }));
-    });
-    const find = (name) => byAlias.get(normalize(name));
-    const volumeText = (n) => n >= 0.01 ? n.toFixed(2) : n.toPrecision(2);
-    const calculate = (name, written, weight, instruction = '') => {
-    const drug = find(name);
-    const fail = (reason) => ({ text: reason, basis: written || '', volume: null });
-    const dose = String(written || '').replace(/\s/g, '').toLowerCase();
-    if (/\d\s*(?:mpk|mg|ml|mcg|ug|iu|cc)|희석|농도/i.test(instruction)) return fail('용량 확인 필요');
-    if (/^\d+(?:\.\d+)?(?:ml|cc)$/.test(dose)) {
-    const volume = parseFloat(dose);
-    return volume > 0 ? { volume, text: volumeText(volume) + ' mL', basis: '차트 mL' } : fail('용량 확인 필요');
-    }
-    if (!drug) return fail('농도 미등록');
-    let value = drug.dose, unit = drug.unit || 'mg', perKg = true, origin = '기본';
-    if (dose) {
-    const match = dose.match(/^(\d+(?:\.\d+)?)(mpk|mg\/kg|gpk|ug\/kg|mcg\/kg|iu\/kg|u\/kg|ml\/kg|mg|mg\/dog|mg\/cat)$/);
-    if (!match) return fail('용량 확인 필요');
-    value = Number(match[1]); origin = '차트';
-    const u = match[2];
-    perKg = !['mg', 'mg/dog', 'mg/cat'].includes(u);
-    unit = /^(iu|u)\//.test(u) ? 'IU' : /^(ug|mcg)\//.test(u) ? 'ug' : u === 'ml/kg' ? 'mL' : 'mg';
-    if (u === 'gpk') value *= 1000;
-    }
-    const kg = /^\d+(?:\.\d+)? kg$/.test(weight || '') ? parseFloat(weight) : NaN;
-    if (perKg && !(kg > 0)) return fail('체중 확인 필요');
-    if (!(value > 0)) return fail('용량 확인 필요');
-    if (unit !== 'mL' && ((unit === 'IU') !== (drug.unit === 'IU'))) return fail('단위 확인 필요');
-    const conc = drug.conc;
-    if (unit !== 'mL' && !(conc > 0)) return fail('농도 확인 필요');
-    const volume = value * (perKg ? kg : 1) * (unit === 'ug' ? 0.001 : 1) / (unit === 'mL' ? 1 : conc);
-    const doseUnit = perKg ? (unit === 'mg' ? 'mpk' : unit + '/kg') : unit;
-    return { volume, text: volumeText(volume) + ' mL', basis: value + ' ' + doseUnit + (origin === '기본' ? '(기본)' : '') +
-    (unit === 'mL' ? '' : ' · ' + conc + (drug.unit === 'IU' ? ' IU/mL' : ' mg/mL')) };
-    };
-    return { find, calculate };
-    };
-    if (typeof module !== 'undefined') module.exports = createDoseEngine;
-    const doseEngine = createDoseEngine([
-    {
-    "name": "SAM (유니설암)",
-    "dose": 22,
-    "conc": 150,
-    "sc": false,
-    "note": ""
-    },
-    {
-    "name": "Famotidine (모틴)",
-    "dose": 1,
-    "conc": 10,
-    "sc": false,
-    "note": "1 or 0.5 mg/kg"
-    },
-    {
-    "name": "Maropitant",
-    "dose": 1,
-    "conc": 10,
-    "sc": false,
-    "note": ""
-    },
-    {
-    "name": "Enrofloxacin (바이트릴)",
-    "dose": 5,
-    "conc": 25,
-    "sc": true,
-    "note": ""
-    },
-    {
-    "name": "Vitamin K",
-    "dose": 1,
-    "conc": 10,
-    "sc": true,
-    "note": ""
-    },
-    {
-    "name": "Metoclopramide",
-    "dose": 0.5,
-    "conc": 5,
-    "sc": true,
-    "note": ""
-    },
-    {
-    "name": "Cefazolin",
-    "dose": 22,
-    "conc": 200,
-    "sc": false,
-    "note": ""
-    },
-    {
-    "name": "Ondansetron",
-    "dose": 0.5,
-    "conc": 2,
-    "sc": false,
-    "note": ""
-    },
-    {
-    "name": "Omeprazole",
-    "dose": 1,
-    "conc": 10,
-    "sc": false,
-    "note": "차광필요"
-    },
-    {
-    "name": "Carprofen",
-    "dose": 2.2,
-    "conc": 50,
-    "sc": true,
-    "note": "2.2 or 4.4 mg/kg"
-    },
-    {
-    "name": "Marbofloxacin (Marbocyl)",
-    "dose": 2,
-    "conc": 10,
-    "sc": false,
-    "note": ""
-    },
-    {
-    "name": "Tramadol",
-    "dose": 4,
-    "conc": 50,
-    "sc": false,
-    "note": ""
-    },
-    {
-    "name": "Tranexamic acid (트라넥삼산)",
-    "dose": 10,
-    "conc": 100,
-    "sc": false,
-    "note": ""
-    },
-    {
-    "name": "Dalteparin",
-    "dose": 150,
-    "conc": 2500,
-    "unit": "IU",
-    "sc": true,
-    "note": ""
-    },
-    {
-    "name": "Meloxicam",
-    "dose": 0.1,
-    "conc": 5,
-    "sc": false,
-    "note": ""
-    },
-    {
-    "name": "Meropenem",
-    "dose": 8.5,
-    "conc": 50,
-    "sc": false,
-    "note": ""
-    }
-    ]
-    );
     const API = 'https://api-vetsync4.vetu1.com/api/v1';
     const HOSPITAL_ID = '24';
     const DRAW_HOUR = 9;
@@ -226,8 +55,7 @@
     const A0 = '\uE000', A1 = '\uE001';
     const D0 = '\uE002', D1 = '\uE003';
     const B0 = '\uE004', B1 = '\uE005';
-    const M0 = '\uE006', M1 = '\uE007', S0 = '\uE008', S1 = '\uE009';
-    const INJ_BASELINE = 'vetsync-injection-baseline-v2:';
+    const INJ_BASELINE = 'vetsync-injection-baseline-v1:';
     const pad = (n) => String(n).padStart(2, '0');
     const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
     const shift = (date, n) => {
@@ -404,7 +232,7 @@
     const n = (name || '').trim();
     if (!n || NONAME.test(n)) return false;
     if (SKIP.test(n) || PROC.test(n) || CRI.test(n) || EYE.test(n) || NOTINJ.test(n) || ORAL.test(n)) return false;
-    return ROUTE.test(n) || KNOWN.test(n) || /vitamin\s*k/i.test(n);
+    return ROUTE.test(n) || KNOWN.test(n);
     };
     const frequencyFrom = (text) => {
     const value = String(text || '');
@@ -436,8 +264,7 @@
     const b = s.match(/(?:^|\s)(\d+(?:\.\d+)?)(?=\s|$)/);
     if (b) { dose = b[1]; s = s.replace(b[0], ' '); }
     }
-    const drug = s.replace(/\s+/g, ' ').trim().replace(/[,\-]+$/, '');
-    return { drug, dose, route, frequency, note: notes.filter(Boolean).join(', ') };
+    return { drug: s.replace(/\s+/g, ' ').trim().replace(/[,\-]+$/, ''), dose, route, frequency, note: notes.filter(Boolean).join(', ') };
     }
     const splitDrugs = (name) => {
     if (!name.includes(',')) return [name];
@@ -510,11 +337,8 @@
     if (r.cage !== '미지정') p.cage = r.cage;
     if (r.weight && r.weight !== '- kg') p.weight = r.weight;
     if (r.predicted) p.predicted = true;
-    const registered = typeof doseEngine !== 'undefined' && doseEngine.find(r.drug);
-    const drug = registered ? registered.name : r.drug;
-    const key = JSON.stringify([drug, r.dose.replace(/mg\/kg/i, 'mpk'), r.route, r.frequency, r.note, r.instruction]);
-    const item = p.items[key] = p.items[key] || {
-    match: normDrug(drug) || normDrug(r.raw), drug, dose: r.dose.replace(/mg\/kg/i, 'mpk'), route: r.route, frequency: r.frequency,
+    const item = p.items[r.key] = p.items[r.key] || {
+    match: normDrug(r.drug) || normDrug(r.raw), drug: r.drug, dose: r.dose, route: r.route, frequency: r.frequency,
     note: r.note, instruction: r.instruction, conditional: COND.test(r.raw + ' ' + r.instruction), times: [],
     };
     if (!item.times.some((t) => timeStateKey(t) === timeStateKey(r))) {
@@ -524,45 +348,16 @@
     Object.values(patients).forEach((p) => {
     p.items = Object.values(p.items).map((item) => ({
     ...item, times: item.times.sort((a, b) => a.order - b.order),
-    calculation: typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, p.weight, item.instruction) : undefined,
     }));
     });
     return { checkedAt: new Date().toISOString(), patients };
     }
-    const preparationItem = (item, prev = null, kind = '') => {
-    const calc = item.calculation;
-    const active = (x) => x.times.filter((t) => !t.cancelled);
-    const oldTimes = new Map((prev ? active(prev) : []).map((t) => [timeKey(t), t]));
-    const newTimes = new Set(active(item).map(timeKey));
-    const changedDose = prev && (JSON.stringify(calc) !== JSON.stringify(prev.calculation) || item.dose !== prev.dose || item.route !== prev.route);
-    const actions = [];
-    if (kind === 'removed') actions.push(deletedLabel() + ' 빼기');
-    else if (kind === 'added') {
-    if (active(item).length) actions.push(addedLabel() + ' 추가 준비');
-    } else if (prev) {
-    const added = active(item).filter((t) => !oldTimes.has(timeKey(t)));
-    const removed = active(prev).filter((t) => !newTimes.has(timeKey(t)));
-    if (added.length) actions.push(addedLabel() + ' 추가 준비: ' + added.map(plainTimeLabel).join(', '));
-    if (removed.length) actions.push(deletedLabel() + ' 빼기: ' + removed.map(plainTimeLabel).join(', '));
-    if (changedDose && active(item).some((t) => oldTimes.has(timeKey(t)))) actions.push(orange('용량·경로 재확인'));
-    }
-    const times = orderedTimeText(item.times, item);
-    let amount = calc.text;
-    if (changedDose && prev.calculation && prev.calculation.text !== calc.text) amount = beforeValue(prev.calculation.text) + ' → ' + orange(calc.text);
-    const route = prev && item.route !== prev.route ? beforeValue(routeLabel(prev.route) || '미기재') + '→' + orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
-    const main = M0 + item.drug + M1 + ' · ' + times + ' · ' + M0 + amount + M1 + (route ? ' · ' + route : '');
-    const basis = calc.basis + (item.note || item.instruction ? ' · ' + [item.note, item.instruction].filter(Boolean).join(', ') : '');
-    return (actions.length ? actions.join(' / ') + '\n' : '') + (kind === 'removed' ? cancelled(main) : main) +
-    (basis ? '\n' + S0 + basis + S1 : '');
-    };
     const rawItem = (item) => {
-    if (item.calculation) return preparationItem(item);
     const label = [item.drug, item.dose, routeLabel(item.route)].filter(Boolean).join(' ');
     const extra = [item.note, item.instruction].filter(Boolean).join(', ');
     return label + ' (' + orderedTimeText(item.times, item) + ')' + (extra ? ' [' + extra + ']' : '');
     };
     function changedItem(item, prev, kind) {
-    if (item.calculation) return preparationItem(item, prev, kind);
     let text;
     if (kind === 'added') text = addedLabel() + ' ' + rawItem(item);
     else if (kind === 'removed') text = deletedLabel() + ' ' + cancelled(rawItem(item));
@@ -600,7 +395,6 @@
     return text;
     }
     const sameItem = (a, b) => a.drug === b.drug && a.dose === b.dose && a.route === b.route &&
-    JSON.stringify(a.calculation) === JSON.stringify(b.calculation) &&
     frequencyOf(a) === frequencyOf(b) &&
     a.note === b.note && a.instruction === b.instruction &&
     a.times.map(timeStateKey).join(',') === b.times.map(timeStateKey).join(',');
@@ -746,9 +540,6 @@
     }
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     const toHtml = (s) => esc(s)
-    .replace(/\n/g, '<br>')
-    .split(M0).join('<strong style="font-size:16px">').split(M1).join('</strong>')
-    .split(S0).join('<span style="font-size:12px;color:#64748b">').split(S1).join('</span>')
     .split(U0).join('<u style="font-weight:800">').split(U1).join('</u>')
     .split(E0).join('<strong style="font-weight:800;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px">')
     .split(E1).join('</strong>')
@@ -766,8 +557,6 @@
     g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
     ).join('\n')
     ).join('\n\n')
-    .split(M0).join('**').split(M1).join('**')
-    .split(S0).join('').split(S1).join('')
     .split(U0).join('**__').split(U1).join('__**')
     .split(E0).join('**__').split(E1).join('__**')
     .split(O0).join('**').split(O1).join('**')
@@ -843,7 +632,7 @@
     '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
     TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
     'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-    '<span style="flex:1"></span><span style="font-size:11px">2.0</span>' +
+    '<span style="flex:1"></span>' +
     '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
     '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
