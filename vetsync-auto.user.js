@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.0.0
+// @version      2.0.1
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -47,7 +47,10 @@
     const calculate = (name, written, weight, instruction = '') => {
     const drug = find(name);
     const fail = (reason) => ({ text: reason, basis: written || '', volume: null });
-    const dose = String(written || '').replace(/\s/g, '').toLowerCase();
+    let dose = String(written || '').replace(/\s/g, '').toLowerCase();
+    if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(dose)) dose += 'mpk';
+    if (dose.startsWith('.')) dose = '0' + dose;
+    if (/용량 불일치/.test(instruction)) return fail('용량 불일치');
     if (/\d\s*(?:mpk|mg|ml|mcg|ug|iu|cc)|희석|농도/i.test(instruction)) return fail('용량 확인 필요');
     if (/^\d+(?:\.\d+)?(?:ml|cc)$/.test(dose)) {
     const volume = parseFloat(dose);
@@ -72,8 +75,11 @@
     if (unit !== 'mL' && !(conc > 0)) return fail('농도 확인 필요');
     const volume = value * (perKg ? kg : 1) * (unit === 'ug' ? 0.001 : 1) / (unit === 'mL' ? 1 : conc);
     const doseUnit = perKg ? (unit === 'mg' ? 'mpk' : unit + '/kg') : unit;
-    return { volume, text: volumeText(volume) + ' mL', basis: value + ' ' + doseUnit + (origin === '기본' ? '(기본)' : '') +
-    (unit === 'mL' ? '' : ' · ' + conc + (drug.unit === 'IU' ? ' IU/mL' : ' mg/mL')) };
+    const doseText = value + ' ' + doseUnit + (origin === '기본' ? '(기본)' : '');
+    const concText = unit === 'mL' ? '' : conc + (drug.unit === 'IU' ? ' IU/mL' : ' mg/mL');
+    const nonDefault = origin === '차트' && perKg && unit === (drug.unit || 'mg') && value !== drug.dose;
+    return { volume, text: volumeText(volume) + ' mL', doseText, concText, nonDefault,
+    basis: doseText + (concText ? ' · ' + concText : '') };
     };
     return { find, calculate };
     };
@@ -274,8 +280,10 @@
     if (typeof value === 'object') {
     return weightValue(value.value ?? value.kg ?? value.weight ?? value.amount);
     }
-    const match = String(value).replace(',', '.').match(/\d+(?:\.\d+)?/);
-    return match && Number(match[0]) > 0 ? String(Number(match[0])) + ' kg' : '';
+    const match = String(value).trim().replace(',', '.').match(/^(\d+(?:\.\d+)?|\.\d+)\s*(kg|kgs|킬로|킬로그램|g|그램)?$/i);
+    if (!match) return '';
+    const kg = Number(match[1]) / (/^(g|그램)$/i.test(match[2] || '') ? 1000 : 1);
+    return Number.isFinite(kg) && kg > 0 ? String(kg) + ' kg' : '';
     };
     const latestWeight = (detail, chart) => {
     const measured = rowsOf(detail)
@@ -430,15 +438,24 @@
     const r = s.match(ROUTE);
     if (r) { route = r[1].toUpperCase(); s = s.replace(ROUTE, ' '); }
     let dose = '';
-    const d = s.match(/(\d+(?:\.\d+)?)\s*(mpk|gpk|mg\s*\/\s*kg|mg\s*\/\s*dog|mg\s*\/\s*cat|ml\s*\/\s*kg|ug\s*\/\s*kg|mcg\s*\/\s*kg|ug\s*\/\s*cat|IU\s*\/\s*kg|U\s*\/\s*kg|units?|칸|ml|mg|cc|amp)\b/i);
+    const d = s.match(/(\d+(?:\.\d+)?|\.\d+)\s*(mpk|gpk|mg\s*\/\s*kg|mg\s*\/\s*dog|mg\s*\/\s*cat|ml\s*\/\s*kg|ug\s*\/\s*kg|mcg\s*\/\s*kg|ug\s*\/\s*cat|IU\s*\/\s*kg|U\s*\/\s*kg|units?|칸|ml|mg|cc|amp)\b/i);
     if (d) { dose = d[0].replace(/\s+/g, ''); s = s.replace(d[0], ' '); }
     else {
-    const b = s.match(/(?:^|\s)(\d+(?:\.\d+)?)(?=\s|$)/);
+    const b = s.match(/(?:^|\s)(\d+(?:\.\d+)?|\.\d+)(?=\s|$)/);
     if (b) { dose = b[1]; s = s.replace(b[0], ' '); }
     }
     const drug = s.replace(/\s+/g, ' ').trim().replace(/[,\-]+$/, '');
     return { drug, dose, route, frequency, note: notes.filter(Boolean).join(', ') };
     }
+    const doseFromInstruction = (text) => {
+    const value = String(text || '').trim();
+    if (!value) return '';
+    const parsed = parseDrug(value).dose;
+    if (/(?:mpk|gpk|mg\/kg|mg\/dog|mg\/cat|ml\/kg|ug\/kg|mcg\/kg|iu\/kg|u\/kg|ml|mg|cc|amp)$/i.test(parsed)) return parsed;
+    const bare = value.match(/^(?:복용약|dose|용량)?\s*[:：]?\s*\(?((?:\d+(?:\.\d+)?|\.\d+))\)?$/i);
+    return bare ? bare[1] : '';
+    };
+    const normalizedDose = (dose) => String(dose || '').toLowerCase().replace(/\s/g, '').replace('mg/kg', 'mpk').replace(/^\./, '0.');
     const splitDrugs = (name) => {
     if (!name.includes(',')) return [name];
     const parts = name.split(/,\s*/).map((s) => s.trim()).filter(Boolean);
@@ -459,6 +476,8 @@
     if (!admitted(chart, detail, date, cell.hourSlot)) return;
     parts.forEach((p, i) => {
     const parsed = parseDrug(p);
+    const instructionDose = doseFromInstruction(row.instructionText);
+    const doseConflict = !!(parsed.dose && instructionDose && normalizedDose(parsed.dose) !== normalizedDose(instructionDose));
     out.push({
     pid: String(chart.patient.patientId), patient: chart.patient.name, code: chart.patient.hospitalPatientCode,
     breed: breedOf(chart.patient), weight,
@@ -466,6 +485,7 @@
     order: (tag === '내일' ? 100 : 0) + cell.hourSlot,
     cancelled: isCancelled,
     key: name + '#' + i, raw: name, instruction: row.instructionText || '', ...parsed,
+    dose: parsed.dose || instructionDose, doseConflict,
     frequency: parsed.frequency || rowFrequency,
     });
     });
@@ -515,7 +535,8 @@
     const key = JSON.stringify([drug, r.dose.replace(/mg\/kg/i, 'mpk'), r.route, r.frequency, r.note, r.instruction]);
     const item = p.items[key] = p.items[key] || {
     match: normDrug(drug) || normDrug(r.raw), drug, dose: r.dose.replace(/mg\/kg/i, 'mpk'), route: r.route, frequency: r.frequency,
-    note: r.note, instruction: r.instruction, conditional: COND.test(r.raw + ' ' + r.instruction), times: [],
+    note: r.note, instruction: r.instruction, doseConflict: !!r.doseConflict,
+    conditional: COND.test(r.raw + ' ' + r.instruction), times: [],
     };
     if (!item.times.some((t) => timeStateKey(t) === timeStateKey(r))) {
     item.times.push({ tag: r.tag, hour: r.hour, order: r.order, cancelled: !!r.cancelled });
@@ -524,7 +545,8 @@
     Object.values(patients).forEach((p) => {
     p.items = Object.values(p.items).map((item) => ({
     ...item, times: item.times.sort((a, b) => a.order - b.order),
-    calculation: typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, p.weight, item.instruction) : undefined,
+    calculation: typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, p.weight,
+    item.doseConflict ? '용량 불일치' : '') : undefined,
     }));
     });
     return { checkedAt: new Date().toISOString(), patients };
@@ -550,10 +572,12 @@
     let amount = calc.text;
     if (changedDose && prev.calculation && prev.calculation.text !== calc.text) amount = beforeValue(prev.calculation.text) + ' → ' + orange(calc.text);
     const route = prev && item.route !== prev.route ? beforeValue(routeLabel(prev.route) || '미기재') + '→' + orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
-    const main = M0 + item.drug + M1 + ' · ' + times + ' · ' + M0 + amount + M1 + (route ? ' · ' + route : '');
-    const basis = calc.basis + (item.note || item.instruction ? ' · ' + [item.note, item.instruction].filter(Boolean).join(', ') : '');
+    const main = item.drug + ' · ' + times + (route ? ' · ' + route : '');
+    const doseBasis = calc.nonDefault ? '\uE00A' + calc.doseText + '\uE00B' + (calc.concText ? ' · ' + calc.concText : '') : calc.basis;
+    const basis = M0 + amount + M1 + (doseBasis ? ' · ' + doseBasis : '') +
+    (item.note || item.instruction ? ' · ' + [item.note, item.instruction].filter(Boolean).join(', ') : '');
     return (actions.length ? actions.join(' / ') + '\n' : '') + (kind === 'removed' ? cancelled(main) : main) +
-    (basis ? '\n' + S0 + basis + S1 : '');
+    (basis ? '\n' + S0 + (kind === 'removed' ? cancelled(basis) : basis) + S1 : '');
     };
     const rawItem = (item) => {
     if (item.calculation) return preparationItem(item);
@@ -600,6 +624,7 @@
     return text;
     }
     const sameItem = (a, b) => a.drug === b.drug && a.dose === b.dose && a.route === b.route &&
+    a.doseConflict === b.doseConflict &&
     JSON.stringify(a.calculation) === JSON.stringify(b.calculation) &&
     frequencyOf(a) === frequencyOf(b) &&
     a.note === b.note && a.instruction === b.instruction &&
@@ -746,6 +771,7 @@
     }
     const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     const toHtml = (s) => esc(s)
+    .split('\uE00A').join('<span style="background:#fef3c7;color:#92400e;padding:0 3px;border-radius:2px">').split('\uE00B').join('</span>')
     .replace(/\n/g, '<br>')
     .split(M0).join('<strong style="font-size:16px">').split(M1).join('</strong>')
     .split(S0).join('<span style="font-size:12px;color:#64748b">').split(S1).join('</span>')
@@ -766,6 +792,7 @@
     g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
     ).join('\n')
     ).join('\n\n')
+    .split('\uE00A').join('').split('\uE00B').join('')
     .split(M0).join('**').split(M1).join('**')
     .split(S0).join('').split(S1).join('')
     .split(U0).join('**__').split(U1).join('__**')

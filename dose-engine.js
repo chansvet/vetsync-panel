@@ -21,8 +21,11 @@ const createDoseEngine = (drugs) => {
   const calculate = (name, written, weight, instruction = '') => {
     const drug = find(name);
     const fail = (reason) => ({ text: reason, basis: written || '', volume: null });
-    const dose = String(written || '').replace(/\s/g, '').toLowerCase();
+    let dose = String(written || '').replace(/\s/g, '').toLowerCase();
+    if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(dose)) dose += 'mpk';
+    if (dose.startsWith('.')) dose = '0' + dose;
     // Conflicting or additional dosing instructions must not silently use a default.
+    if (/용량 불일치/.test(instruction)) return fail('용량 불일치');
     if (/\d\s*(?:mpk|mg|ml|mcg|ug|iu|cc)|희석|농도/i.test(instruction)) return fail('용량 확인 필요');
     if (/^\d+(?:\.\d+)?(?:ml|cc)$/.test(dose)) {
       const volume = parseFloat(dose);
@@ -47,8 +50,11 @@ const createDoseEngine = (drugs) => {
     if (unit !== 'mL' && !(conc > 0)) return fail('농도 확인 필요');
     const volume = value * (perKg ? kg : 1) * (unit === 'ug' ? 0.001 : 1) / (unit === 'mL' ? 1 : conc);
     const doseUnit = perKg ? (unit === 'mg' ? 'mpk' : unit + '/kg') : unit;
-    return { volume, text: volumeText(volume) + ' mL', basis: value + ' ' + doseUnit + (origin === '기본' ? '(기본)' : '') +
-      (unit === 'mL' ? '' : ' · ' + conc + (drug.unit === 'IU' ? ' IU/mL' : ' mg/mL')) };
+    const doseText = value + ' ' + doseUnit + (origin === '기본' ? '(기본)' : '');
+    const concText = unit === 'mL' ? '' : conc + (drug.unit === 'IU' ? ' IU/mL' : ' mg/mL');
+    const nonDefault = origin === '차트' && perKg && unit === (drug.unit || 'mg') && value !== drug.dose;
+    return { volume, text: volumeText(volume) + ' mL', doseText, concText, nonDefault,
+      basis: doseText + (concText ? ' · ' + concText : '') };
   };
   return { find, calculate };
 };
