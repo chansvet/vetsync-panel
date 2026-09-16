@@ -745,10 +745,14 @@
       (weight && meta ? ' · ' : '') + (meta ? esc(meta) : '') + ')</span>';
   };
 
-  const render = (sections) => sections.map((s) =>
+  const render = (sections, view = '') => {
+    const injectionView = view === 'inj' || sections.some((section) => /주사/.test(section.heading || ''));
+    const patientRule = injectionView ? 'padding:10px 0 4px;border-bottom:2px solid #94a3b8;' :
+      'padding:10px 0 8px;border-bottom:1px solid #e5e7eb;';
+    return sections.map((s) =>
     '<h2 style="font-size:14px;margin:18px 0 8px;color:' + (s.warn ? '#b45309' : '#6b7280') + '">' + esc(s.heading) + '</h2>' +
     (s.groups.length ? s.groups.map((g) =>
-      '<div style="padding:12px 0 14px;border-bottom:2px solid #94a3b8;' +
+      '<div style="' + patientRule +
         (g.updated ? 'border-left:3px solid #64748b;padding-left:10px;' : '') + '">' +
       (g.title ? '<div style="font-weight:700;font-size:16px;line-height:1.45">' + patientTitleHtml(g.title, g.previousWeight) +
         ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span>' +
@@ -757,11 +761,12 @@
           g.status === '미연장' ? 'background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db' :
             'background:#fef2f2;color:#b42318;border:1px solid #fecaca;text-decoration:line-through') + '">' + esc(g.status) + '</span>' : '') +
       (g.updated ? ' <span style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #f59e0b;border-radius:3px;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800">[변경]</span>' : '') + '</div>' : '') +
-      g.body.map((b, index) => '<div style="padding:' + (index ? '7px' : '6px') + ' 0 6px;font-size:15px;font-weight:500;line-height:1.5;' +
+      g.body.map((b, index) => '<div style="padding:' + (index ? '6px' : '5px') + ' 0 ' + (injectionView ? '3px' : '5px') + ';font-size:15px;font-weight:500;line-height:1.5;' +
         (index ? 'border-top:1px solid #e5e7eb;' : '') + '">' + toHtml(b) + '</div>').join('') +
       (g.note ? '<div style="margin-top:4px;color:#475569;font-weight:600">' + esc(g.note) + '</div>' : '') +
       '</div>').join('') : '<p style="color:#6b7280">해당 항목이 없습니다.</p>')
-  ).join('');
+    ).join('');
+  };
 
   const compareText = (a, b) => String(a || '').localeCompare(String(b || ''), 'ko', {
     numeric: true, sensitivity: 'base',
@@ -799,7 +804,7 @@
       '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
       TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
         'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-      '<span style="flex:1"></span><span style="font-size:11px">2.1.2</span>' +
+      '<span style="flex:1"></span><span style="font-size:11px">2.1.3</span>' +
       '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
       '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
       '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -831,7 +836,7 @@
         '<div style="margin:0 -16px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
         '<strong style="color:#92400e">[변경] ' + sections.changeCount + '명</strong><span style="flex:1"></span>' +
         '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #0f766e;border-radius:6px;background:#fff;color:#0f766e">변경 확인</button></div>' : '';
-      body.innerHTML = sortControl + refresh + firstCheck + changes + render(ordered);
+      body.innerHTML = sortControl + refresh + firstCheck + changes + render(ordered, id);
       body.querySelectorAll('[data-sort]').forEach((button) => {
         button.onclick = () => { sortMode = button.dataset.sort; paint(id, sections); };
       });

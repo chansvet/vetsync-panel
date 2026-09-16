@@ -129,6 +129,9 @@ const cancelledOnly = context.__test.toHtml(context.__test.rawItem(item('SAM', '
 assert.match(cancelledOnly, /line-through[^>]+>SAM 22mpk IV/);
 assert.ok((cancelledOnly.match(/line-through/g) || []).length >= 2);
 assert.match(html, /border-bottom:2px solid #94a3b8/);
+const bloodHtml = context.__test.render([{ heading: '채혈', groups: compared.normal }], 'blood');
+assert.doesNotMatch(bloodHtml, /border-bottom:2px solid #94a3b8/);
+assert.match(bloodHtml, /border-bottom:1px solid #e5e7eb/);
 
 const multipleAdds = context.__test.compareSnapshot(
   { patients: { one: patient('추가환자', false, [
