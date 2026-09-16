@@ -49,6 +49,7 @@ const createDoseEngine = (drugs) => {
     if (!(value > 0)) return fail('용량 확인 필요');
     const manualConc = Number(overrides.concentration);
     const manualUnit = overrides.concentrationUnit || '';
+    if (manualConc > 0 && !manualUnit) return fail('농도 단위 확인 필요');
     if (!drug && !(manualConc > 0)) return fail('농도 미등록');
     const drugUnit = drug && (drug.unit || 'mg');
     if (unit !== 'mL' && manualUnit && unit !== manualUnit) return fail('단위 확인 필요');

@@ -122,6 +122,9 @@ const manualHtml = ctx.api.render([{ heading: '수기 입력', groups: ctx.api.c
 assert.match(manualHtml, /data-manual-box/);
 assert.match(manualHtml, /data-manual="weight"/);
 assert.match(manualHtml, /data-manual="concentration"/);
+assert.match(manualHtml, /몸무게 입력 안됨/);
+assert.match(manualHtml, /역가 입력 안됨/);
+assert.doesNotMatch(manualHtml, /value="10"/);
 console.log('2.0 계산·별칭·추가·제외·체중 변경 테스트 통과');
 if (process.argv.includes('--preview')) {
   const body = ctx.api.render([{ heading: 'VetSync 2.0 · 예시 환자', groups: diff.normal },

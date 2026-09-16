@@ -50,6 +50,7 @@ if (perKg && !(kg > 0)) return fail('체중 확인 필요');
 if (!(value > 0)) return fail('용량 확인 필요');
 const manualConc = Number(overrides.concentration);
 const manualUnit = overrides.concentrationUnit || '';
+if (manualConc > 0 && !manualUnit) return fail('농도 단위 확인 필요');
 if (!drug && !(manualConc > 0)) return fail('농도 미등록');
 const drugUnit = drug && (drug.unit || 'mg');
 if (unit !== 'mL' && manualUnit && unit !== manualUnit) return fail('단위 확인 필요');
@@ -533,15 +534,14 @@ const deletedLabel = () => D0 + '삭제' + D1;
 const beforeValue = (s) => B0 + s + B1;
 const plainTimeLabel = (t) => (t.tag === '내일' ? '내일 ' : '') + t.hour + '시';
 const excluded = (times) => G0 + '제외: ' + times.map(plainTimeLabel).join(', ') + G1;
+const excludedCancelled = (times) => G0 + cancelled('제외: ' + times.map(plainTimeLabel).join(', ')) + G1;
 const orderedTimeText = (times, item) => [...times].sort((a, b) => a.order - b.order)
 .map((t) => t.cancelled ? excluded([t]) : timeLabel(t, item)).join(', ');
 const routeLabel = (route) => /^(SC|IM)$/.test(route) ? U0 + route + U1 : route;
 const MAN0 = '\uE020', MAN1 = '\uE021';
-const manualKey = (pid, drug) => 'vetsync-manual-dose-v1:' + HOSPITAL_ID + ':' + pid + ':' + normDrug(drug);
-const readManual = (pid, drug) => {
-try { return JSON.parse(localStorage.getItem(manualKey(pid, drug))) || {}; }
-catch (_) { return {}; }
-};
+const manualEntries = new Map();
+const manualKey = (pid, drug) => pid + ':' + normDrug(drug);
+const readManual = (pid, drug) => manualEntries.get(manualKey(pid, drug)) || {};
 const manualMarker = (item) => item.manualNeeded && Object.values(item.manualNeeded).some(Boolean) ? MAN0 + encodeURIComponent(JSON.stringify({
 pid: item.pid, drug: item.drug, written: item.dose, instruction: item.doseConflict ? '용량 불일치' : '',
 weightValue: item.patientWeight, ...item.manualNeeded, values: item.manualValues || {},
@@ -595,6 +595,7 @@ return { checkedAt: new Date().toISOString(), patients };
 const preparationItem = (item, prev = null, kind = '') => {
 const calc = item.calculation;
 const active = (x) => x.times.filter((t) => !t.cancelled);
+const allCancelled = item.times.length > 0 && active(item).length === 0;
 const oldTimes = new Map((prev ? active(prev) : []).map((t) => [timeKey(t), t]));
 const newTimes = new Set(active(item).map(timeKey));
 const manualCalculation = (item.manualNeeded && Object.values(item.manualNeeded).some(Boolean)) ||
@@ -602,14 +603,13 @@ const manualCalculation = (item.manualNeeded && Object.values(item.manualNeeded)
 const changedDose = prev && ((!manualCalculation && JSON.stringify(calc) !== JSON.stringify(prev.calculation)) ||
 item.dose !== prev.dose || item.route !== prev.route);
 const displayTimes = [...item.times].map((t) => {
-let text = t.cancelled ? excluded([t]) : timeLabel(t, item);
+let text = t.cancelled ? (allCancelled ? excludedCancelled([t]) : excluded([t])) : timeLabel(t, item);
 if (prev && !t.cancelled && !oldTimes.has(timeKey(t))) text = orange(text);
 return { order: t.order, text };
 });
 if (prev) active(prev).filter((t) => !newTimes.has(timeKey(t)))
 .forEach((t) => displayTimes.push({ order: t.order, text: cancelled(timeLabel(t, prev)) }));
 const times = displayTimes.sort((a, b) => a.order - b.order).map((t) => t.text).join(', ');
-const allCancelled = item.times.length > 0 && active(item).length === 0;
 let amount = calc.text;
 if (changedDose && prev.calculation && prev.calculation.text !== calc.text) amount = beforeValue(prev.calculation.text) + ' → ' + orange(calc.text);
 const route = prev && item.route !== prev.route ? beforeValue(routeLabel(prev.route) || '미기재') + '→' + orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
@@ -627,8 +627,10 @@ const rawItem = (item) => {
 if (item.calculation) return preparationItem(item);
 const label = [item.drug, item.dose, routeLabel(item.route)].filter(Boolean).join(' ');
 const extra = [item.note, item.instruction].filter(Boolean).join(', ');
-const text = label + ' (' + orderedTimeText(item.times, item) + ')' + (extra ? ' [' + extra + ']' : '');
-return item.times.length && item.times.every((time) => time.cancelled) ? cancelled(text) : text;
+const allCancelled = item.times.length && item.times.every((time) => time.cancelled);
+const times = allCancelled ? item.times.map((time) => excludedCancelled([time])).join(', ') : orderedTimeText(item.times, item);
+const text = label + ' (' + times + ')' + (extra ? ' [' + extra + ']' : '');
+return allCancelled ? cancelled(text) : text;
 };
 function changedItem(item, prev, kind) {
 if (item.calculation) return preparationItem(item, prev, kind);
@@ -814,27 +816,27 @@ const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt
 const manualHtml = (encoded) => {
 let data;
 try { data = JSON.parse(decodeURIComponent(encoded)); } catch (_) { return ''; }
-const v = data.values || {};
-const input = (field, value, label, step = 'any') => '<label style="display:flex;align-items:center;gap:4px;min-height:38px;font-size:11px;font-weight:700;color:#64748b">' + label +
-'<input data-manual="' + field + '" type="number" inputmode="decimal" min="0" step="' + step + '" value="' + esc(value || '') +
-'" style="box-sizing:border-box;width:62px;height:36px;border:1px solid #a8b2c0;border-radius:4px;background:#fff;color:#111827;padding:0 6px;font:700 16px/1 system-ui"></label>';
-const select = (field, value, options, label) => '<label style="display:flex;align-items:center;gap:4px;min-height:38px;font-size:11px;font-weight:700;color:#64748b">' + label +
-'<select data-manual="' + field + '" style="height:36px;border:1px solid #a8b2c0;border-radius:4px;background:#fff;color:#111827;padding:0 4px;font:700 14px/1 system-ui">' +
+const v = { ...(data.values || {}), ...readManual(data.pid, data.drug) };
+const input = (field, value, label, step = 'any') => '<label style="display:flex;align-items:center;gap:4px;min-height:34px;font-size:10px;font-weight:700;color:#64748b">' + label +
+'<input data-manual="' + field + '" name="vsp-' + field + '-' + esc(data.pid) + '" autocomplete="off" type="number" inputmode="decimal" min="0" step="' + step + '" value="' + esc(value || '') +
+'" style="box-sizing:border-box;width:58px;height:32px;border:1px solid #a8b2c0;border-radius:4px;background:#fff;color:#111827;padding:0 5px;font:700 16px/1 system-ui"></label>';
+const select = (field, value, options, label) => '<label style="display:flex;align-items:center;gap:4px;min-height:34px;font-size:10px;font-weight:700;color:#64748b">' + label +
+'<select data-manual="' + field + '" autocomplete="off" style="height:32px;border:1px solid #a8b2c0;border-radius:4px;background:#fff;color:#111827;padding:0 3px;font:700 13px/1 system-ui">' +
 options.map((o) => '<option value="' + o[0] + '"' + (value === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>';
 const fields = [];
-if (data.weight) fields.push(input('weight', v.weight, '체중'), '<span style="margin-left:-3px;font-size:12px;color:#64748b">kg</span>');
+if (data.weight) fields.push(input('weight', v.weight, '몸무게 입력 안됨'), '<span style="margin-left:-3px;font-size:11px;color:#64748b">kg</span>');
 if (data.dose) {
-fields.push(input('dose', v.dose, '용량'));
-fields.push(select('doseUnit', v.doseUnit || 'mpk', [['mpk','mg/kg'],['ug/kg','µg/kg'],['iu/kg','IU/kg'],['ml/kg','mL/kg'],['mg','mg/환자']], '단위'));
+fields.push(input('dose', v.dose, 'mpk 입력 안됨'));
+fields.push(select('doseUnit', v.doseUnit || '', [['','단위'],['mpk','mg/kg'],['ug/kg','µg/kg'],['iu/kg','IU/kg'],['ml/kg','mL/kg'],['mg','mg/환자']], ''));
 }
 if (data.concentration) {
-fields.push(input('concentration', v.concentration, '농도'));
-fields.push(select('concentrationUnit', v.concentrationUnit || 'mg', [['mg','mg/mL'],['ug','µg/mL'],['IU','IU/mL']], '단위'));
+fields.push(input('concentration', v.concentration, '역가 입력 안됨'));
+fields.push(select('concentrationUnit', v.concentrationUnit || '', [['','단위'],['mg','mg/mL'],['ug','µg/mL'],['IU','IU/mL']], ''));
 }
 return '<div data-manual-box data-pid="' + esc(data.pid) + '" data-drug="' + esc(data.drug) + '" data-written="' + esc(data.written) +
 '" data-weight-value="' + esc(data.weightValue || '') +
-'" data-instruction="' + esc(data.instruction) + '" style="margin-top:5px;padding:5px 7px;border-left:2px solid #94a3b8;background:#f8fafc">' +
-'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + fields.join('') +
+'" data-instruction="' + esc(data.instruction) + '" style="margin-top:3px;padding:3px 6px;border-left:2px solid #94a3b8;background:#f8fafc">' +
+'<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">' + fields.join('') +
 '<output data-manual-result aria-live="polite" style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;color:#0f766e">' +
 '<strong data-manual-volume style="font-size:16px">입력 필요</strong><span data-manual-basis style="font-size:11px;font-weight:500;color:#64748b"></span></output></div></div>';
 };
@@ -894,7 +896,7 @@ return esc(name) + ' <span style="color:#64748b;font-size:14px;font-weight:500">
 const render = (sections) => sections.map((s) =>
 '<h2 style="font-size:14px;margin:18px 0 8px;color:' + (s.warn ? '#b45309' : '#6b7280') + '">' + esc(s.heading) + '</h2>' +
 (s.groups.length ? s.groups.map((g) =>
-'<div style="padding:12px 0 13px;border-bottom:1px solid #cbd5e1;' +
+'<div style="padding:12px 0 14px;border-bottom:2px solid #94a3b8;' +
 (g.updated ? 'border-left:3px solid #64748b;padding-left:10px;' : '') + '">' +
 (g.title ? '<div style="font-weight:700;font-size:16px;line-height:1.45">' + patientTitleHtml(g.title, g.previousWeight) +
 ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span>' +
@@ -942,7 +944,7 @@ box.innerHTML =
 '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
 TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
 'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-'<span style="flex:1"></span><span style="font-size:11px">2.1.1</span>' +
+'<span style="flex:1"></span><span style="font-size:11px">2.1.2</span>' +
 '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
 '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -992,7 +994,7 @@ const values = {
 weight: value('weight'), dose: value('dose'), doseUnit: value('doseUnit'),
 concentration: value('concentration'), concentrationUnit: value('concentrationUnit'),
 };
-try { localStorage.setItem(manualKey(manualBox.dataset.pid, manualBox.dataset.drug), JSON.stringify(values)); } catch (_) {}
+manualEntries.set(manualKey(manualBox.dataset.pid, manualBox.dataset.drug), values);
 const result = doseEngine.calculate(manualBox.dataset.drug, manualBox.dataset.written,
 values.weight ? values.weight + ' kg' : manualBox.dataset.weightValue,
 manualBox.dataset.instruction, {
