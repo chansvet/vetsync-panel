@@ -102,7 +102,7 @@ assert.equal(diff.changes, 1);
 const html = ctx.api.render([{heading: '주사', groups: diff.normal}]);
 assert.match(html, /0\.73 mL.*0\.88 mL/);
 assert.doesNotMatch(html, /추가 준비|용량·경로 재확인|\[추가\]|\[삭제\]/);
-assert.match(html, /color:#b45309[^>]+>Maropitant · 21시 · IV/);
+assert.match(html, /color:#b45309[^>]+><strong[^>]*>Maropitant<\/strong> · 21시 · IV/);
 const skip = ctx.api.compareSnapshot(snapshot(row('SAM', '', 17, true)), sam, {});
 assert.doesNotMatch(skip.normal[0].body[0], /빼기|삭제/);
 const removed = ctx.api.compareSnapshot(snapshot(), sam, {});
@@ -110,10 +110,11 @@ assert.doesNotMatch(removed.normal[0].body[0], /빼기|삭제/);
 assert.match(removed.normal[0].body[0], /0.73 mL/);
 assert.equal(snapshot(row('vit K', '2mpk'), row('vitamin K', '2mpk', 21)).patients.test.items.length, 1);
 const frequencyShift = snapshot(
-  { ...row('vit K', '2mpk', 21), frequency: 'BID' },
-  { ...row('vitamin K', '2mpk', 9), tag: '내일', order: 109, frequency: 'SID' },
+  { ...row('vit K', '2', 21), frequency: 'BID', note: 'BID', instruction: 'BID' },
+  { ...row('vitamin K', '2mpk', 9), tag: '내일', order: 109, frequency: 'SID', note: 'SID', instruction: 'SID' },
 );
 assert.equal(frequencyShift.patients.test.items.length, 1);
+assert.equal(frequencyShift.patients.test.items[0].dose, '2mpk');
 assert.deepEqual(JSON.parse(JSON.stringify(frequencyShift.patients.test.items[0].times.map((time) => time.frequency))), ['BID', 'SID']);
 assert.equal(engine.calculate('Unknown', '2mpk', '5 kg', '', { concentration: 10, concentrationUnit: 'mg' }).text, '1.00 mL');
 const manualSnapshot = snapshot({ ...row('Unknown', '2mpk'), weight: '- kg' });

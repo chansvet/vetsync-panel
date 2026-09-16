@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.1.0
+// @version      2.1.1
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -260,7 +260,7 @@
     const D0 = '\uE002', D1 = '\uE003';
     const B0 = '\uE004', B1 = '\uE005';
     const M0 = '\uE006', M1 = '\uE007', S0 = '\uE008', S1 = '\uE009';
-    const INJ_BASELINE = 'vetsync-injection-baseline-v2:';
+    const INJ_BASELINE = 'vetsync-injection-baseline-v3:';
     const pad = (n) => String(n).padStart(2, '0');
     const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
     const shift = (date, n) => {
@@ -486,7 +486,14 @@
     const bare = value.match(/^(?:복용약|dose|용량)?\s*[:：]?\s*\(?((?:\d+(?:\.\d+)?|\.\d+))\)?$/i);
     return bare ? bare[1] : '';
     };
-    const normalizedDose = (dose) => String(dose || '').toLowerCase().replace(/\s/g, '').replace('mg/kg', 'mpk').replace(/^\./, '0.');
+    const normalizedDose = (dose) => {
+    let value = String(dose || '').toLowerCase().replace(/\s/g, '').replace('mg/kg', 'mpk').replace(/^\./, '0.');
+    if (/^\d+(?:\.\d+)?$/.test(value)) value += 'mpk';
+    return value;
+    };
+    const mergeDirective = (value) => String(value || '').toLowerCase()
+    .replace(/\b(?:sid|bid|tid|qid)\b|\bq\s*(?:6|8|12|24)\s*h\b|(?:하루|1일)\s*[1-4]\s*회/ig, '')
+    .replace(/[\s,]+/g, '');
     const splitDrugs = (name) => {
     if (!name.includes(',') && !/\s+\/\s+/.test(name)) return [name];
     const parts = name.split(/,\s*|\s+\/\s+/).map((s) => s.trim()).filter(Boolean);
@@ -575,9 +582,10 @@
     if (r.predicted) p.predicted = true;
     const registered = typeof doseEngine !== 'undefined' && doseEngine.find(r.drug);
     const drug = registered ? registered.name : r.drug;
-    const key = JSON.stringify([drug, r.dose.replace(/mg\/kg/i, 'mpk'), r.route, r.note, r.instruction]);
+    const dose = normalizedDose(r.dose);
+    const key = JSON.stringify([drug, dose, r.route, mergeDirective(r.note), mergeDirective(r.instruction)]);
     const item = p.items[key] = p.items[key] || {
-    pid: r.pid, match: normDrug(drug) || normDrug(r.raw), drug, dose: r.dose.replace(/mg\/kg/i, 'mpk'), route: r.route, frequency: r.frequency,
+    pid: r.pid, match: normDrug(drug) || normDrug(r.raw), drug, dose, route: r.route, frequency: r.frequency,
     note: r.note, instruction: r.instruction, doseConflict: !!r.doseConflict,
     conditional: !!r.conditional || COND.test(r.raw + ' ' + r.instruction), times: [],
     };
@@ -625,23 +633,26 @@
     if (prev) active(prev).filter((t) => !newTimes.has(timeKey(t)))
     .forEach((t) => displayTimes.push({ order: t.order, text: cancelled(timeLabel(t, prev)) }));
     const times = displayTimes.sort((a, b) => a.order - b.order).map((t) => t.text).join(', ');
+    const allCancelled = item.times.length > 0 && active(item).length === 0;
     let amount = calc.text;
     if (changedDose && prev.calculation && prev.calculation.text !== calc.text) amount = beforeValue(prev.calculation.text) + ' → ' + orange(calc.text);
     const route = prev && item.route !== prev.route ? beforeValue(routeLabel(prev.route) || '미기재') + '→' + orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
-    let main = item.drug + ' · ' + times + (route ? ' · ' + route : '');
-    if (kind === 'added') main = orange(main);
+    let main = '\uE030' + item.drug + '\uE031 · ' + times + (route ? ' · ' + route : '');
+    if (allCancelled) main = cancelled(main);
+    else if (kind === 'added') main = orange(main);
     const doseBasis = calc.nonDefault ? '\uE00A' + calc.doseText + '\uE00B' + (calc.concText ? ' · ' + calc.concText : '') : calc.basis;
     const basis = M0 + amount + M1 + (doseBasis ? ' · ' + doseBasis : '') +
     (item.note || item.instruction ? ' · ' + [item.note, item.instruction].filter(Boolean).join(', ') : '');
     return (kind === 'removed' ? cancelled(main) : main) +
-    (basis ? '\n' + S0 + (kind === 'removed' ? cancelled(basis) : basis) + S1 : '') +
+    (basis ? '\n' + S0 + (kind === 'removed' || allCancelled ? cancelled(basis) : basis) + S1 : '') +
     (kind === 'removed' ? '' : manualMarker(item));
     };
     const rawItem = (item) => {
     if (item.calculation) return preparationItem(item);
     const label = [item.drug, item.dose, routeLabel(item.route)].filter(Boolean).join(' ');
     const extra = [item.note, item.instruction].filter(Boolean).join(', ');
-    return label + ' (' + orderedTimeText(item.times, item) + ')' + (extra ? ' [' + extra + ']' : '');
+    const text = label + ' (' + orderedTimeText(item.times, item) + ')' + (extra ? ' [' + extra + ']' : '');
+    return item.times.length && item.times.every((time) => time.cancelled) ? cancelled(text) : text;
     };
     function changedItem(item, prev, kind) {
     if (item.calculation) return preparationItem(item, prev, kind);
@@ -828,11 +839,11 @@
     let data;
     try { data = JSON.parse(decodeURIComponent(encoded)); } catch (_) { return ''; }
     const v = data.values || {};
-    const input = (field, value, label, step = 'any') => '<label style="display:flex;align-items:center;gap:5px;min-height:44px;font-size:12px;font-weight:700;color:#475569">' + label +
+    const input = (field, value, label, step = 'any') => '<label style="display:flex;align-items:center;gap:4px;min-height:38px;font-size:11px;font-weight:700;color:#64748b">' + label +
     '<input data-manual="' + field + '" type="number" inputmode="decimal" min="0" step="' + step + '" value="' + esc(value || '') +
-    '" style="box-sizing:border-box;width:76px;height:44px;border:1px solid #94a3b8;border-radius:5px;background:#fff;color:#111827;padding:0 7px;font:700 16px/1 system-ui"></label>';
-    const select = (field, value, options, label) => '<label style="display:flex;align-items:center;gap:5px;min-height:44px;font-size:12px;font-weight:700;color:#475569">' + label +
-    '<select data-manual="' + field + '" style="height:44px;border:1px solid #94a3b8;border-radius:5px;background:#fff;color:#111827;padding:0 5px;font:700 16px/1 system-ui">' +
+    '" style="box-sizing:border-box;width:62px;height:36px;border:1px solid #a8b2c0;border-radius:4px;background:#fff;color:#111827;padding:0 6px;font:700 16px/1 system-ui"></label>';
+    const select = (field, value, options, label) => '<label style="display:flex;align-items:center;gap:4px;min-height:38px;font-size:11px;font-weight:700;color:#64748b">' + label +
+    '<select data-manual="' + field + '" style="height:36px;border:1px solid #a8b2c0;border-radius:4px;background:#fff;color:#111827;padding:0 4px;font:700 14px/1 system-ui">' +
     options.map((o) => '<option value="' + o[0] + '"' + (value === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></label>';
     const fields = [];
     if (data.weight) fields.push(input('weight', v.weight, '체중'), '<span style="margin-left:-3px;font-size:12px;color:#64748b">kg</span>');
@@ -846,9 +857,10 @@
     }
     return '<div data-manual-box data-pid="' + esc(data.pid) + '" data-drug="' + esc(data.drug) + '" data-written="' + esc(data.written) +
     '" data-weight-value="' + esc(data.weightValue || '') +
-    '" data-instruction="' + esc(data.instruction) + '" style="margin-top:7px;padding:7px 9px;border-left:3px solid #64748b;background:#f8fafc">' +
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + fields.join('') +
-    '<output data-manual-result aria-live="polite" style="font-size:14px;font-weight:800;color:#0f766e">입력 필요</output></div></div>';
+    '" data-instruction="' + esc(data.instruction) + '" style="margin-top:5px;padding:5px 7px;border-left:2px solid #94a3b8;background:#f8fafc">' +
+    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + fields.join('') +
+    '<output data-manual-result aria-live="polite" style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;color:#0f766e">' +
+    '<strong data-manual-volume style="font-size:16px">입력 필요</strong><span data-manual-basis style="font-size:11px;font-weight:500;color:#64748b"></span></output></div></div>';
     };
     const toHtml = (s) => esc(s)
     .split('\uE00A').join('<span style="background:#fef3c7;color:#92400e;padding:0 3px;border-radius:2px">').split('\uE00B').join('</span>')
@@ -865,6 +877,7 @@
     .split(A0).join('<span style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #93c5fd;border-radius:3px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:800;vertical-align:1px">').split(A1).join('</span>')
     .split(D0).join('<span style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #fca5a5;border-radius:3px;background:#fef2f2;color:#b42318;font-size:12px;font-weight:800;vertical-align:1px">').split(D1).join('</span>')
     .split(B0).join('<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">').split(B1).join('</span>')
+    .split('\uE030').join('<strong style="font-weight:750">').split('\uE031').join('</strong>')
     .replace(new RegExp(MAN0 + '(.+?)' + MAN1, 'g'), (_, encoded) => manualHtml(encoded));
     const asText = (sections) => sections.map((s) =>
     s.heading + (s.reviewNote ? '\n' + s.reviewNote : '') + '\n' + s.groups.map((g) =>
@@ -883,7 +896,8 @@
     .split(G0).join('[').split(G1).join(']')
     .split(A0).join('**[').split(A1).join(']**')
     .split(D0).join('**[').split(D1).join(']**')
-    .split(B0).join('~~').split(B1).join('~~');
+    .split(B0).join('~~').split(B1).join('~~')
+    .split('\uE030').join('**').split('\uE031').join('**');
     const patientTitleHtml = (title, previousWeight = '') => {
     const value = String(title || '');
     const split = value.lastIndexOf(' (');
@@ -913,7 +927,8 @@
     g.status === '미연장' ? 'background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db' :
     'background:#fef2f2;color:#b42318;border:1px solid #fecaca;text-decoration:line-through') + '">' + esc(g.status) + '</span>' : '') +
     (g.updated ? ' <span style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #f59e0b;border-radius:3px;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800">[변경]</span>' : '') + '</div>' : '') +
-    g.body.map((b) => '<div style="margin-top:4px;font-size:15px;font-weight:500;line-height:1.45">' + toHtml(b) + '</div>').join('') +
+    g.body.map((b, index) => '<div style="padding:' + (index ? '7px' : '6px') + ' 0 6px;font-size:15px;font-weight:500;line-height:1.5;' +
+    (index ? 'border-top:1px solid #e5e7eb;' : '') + '">' + toHtml(b) + '</div>').join('') +
     (g.note ? '<div style="margin-top:4px;color:#475569;font-weight:600">' + esc(g.note) + '</div>' : '') +
     '</div>').join('') : '<p style="color:#6b7280">해당 항목이 없습니다.</p>')
     ).join('');
@@ -951,7 +966,7 @@
     '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
     TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
     'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-    '<span style="flex:1"></span><span style="font-size:11px">2.1</span>' +
+    '<span style="flex:1"></span><span style="font-size:11px">2.1.1</span>' +
     '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
     '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1009,8 +1024,11 @@
     concentration: values.concentration, concentrationUnit: values.concentrationUnit,
     });
     const output = manualBox.querySelector('[data-manual-result]');
-    output.textContent = result.volume == null ? result.text : result.text + ' · ' + result.basis;
-    output.style.color = result.volume == null ? '#b42318' : '#0f766e';
+    const volume = output.querySelector('[data-manual-volume]');
+    const basis = output.querySelector('[data-manual-basis]');
+    volume.textContent = result.text;
+    volume.style.color = result.volume == null ? '#b42318' : '#0f766e';
+    basis.textContent = result.volume == null ? '' : result.basis;
     };
     manualBox.dataset.weightValue = manualBox.dataset.weightValue || '';
     manualBox.querySelectorAll('input,select').forEach((control) => control.addEventListener('input', update));

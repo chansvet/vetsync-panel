@@ -123,6 +123,11 @@ const cancelledMiddle = context.__test.toHtml(context.__test.rawItem(item('SAM',
 ], { frequency: 'QID' })));
 assert.match(cancelledMiddle, /17시.*제외: 21시.*내일 1시.*내일 9시/);
 
+const cancelledOnly = context.__test.toHtml(context.__test.rawItem(item('SAM', '22mpk', 'IV', [
+  ['오늘', 21, 21, true],
+], { frequency: 'SID' })));
+assert.match(cancelledOnly, /line-through[^>]+>SAM 22mpk IV/);
+
 const multipleAdds = context.__test.compareSnapshot(
   { patients: { one: patient('추가환자', false, [
     item('B12', '', 'IM', today(18)), item('DPO', '', 'SC', today(19)),
