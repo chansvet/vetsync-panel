@@ -44,27 +44,25 @@ const html = context.__test.render(sections);
 const text = context.__test.asText(sections);
 
 assert.strictEqual(compared.changes, 2);
-assert.deepStrictEqual({ ...compared.changeKinds }, { added: 1, changed: 1, removed: 1, status: 2 });
-assert.strictEqual((html.match(/처치 업데이트/g) || []).length, 2);
+assert.deepStrictEqual({ ...compared.changeKinds }, { changed: 2 });
+assert.strictEqual((html.match(/\[변경\]/g) || []).length, 2);
 assert.match(html, /쪼코 .*5\.2 kg.*#12345 · 푸들/);
 assert.match(html, /background:#fef08a[^>]+>연장<\/span>/);
 assert.match(html, /SAM <span[^>]+>22mpk<\/span>→<span[^>]+>20mpk<\/span> IV/);
 assert.match(html, /<span[^>]+>내일 9시<\/span>/);
 assert.match(html, /line-through[^>]+><u style="font-weight:800">내일 1시<\/u><\/span>/);
 assert.match(html, /maro 1mpk <u style="font-weight:800">SC<\/u> \(21시\)/);
-assert.match(html, />추가<\/span> B12 <u style="font-weight:800">IM<\/u> \(18시\)/);
+assert.match(html, /color:#b45309[^>]+>B12 <u style="font-weight:800">IM<\/u> \(18시\)<\/span>/);
 assert.match(html, /퇴원환자 .*5\.2 kg.*#12345 · 푸들/);
 assert.match(html, /text-decoration:line-through[^>]+>퇴원<\/span>/);
 assert.match(html, /line-through[^>]+>cefa 20mpk IV \(17시\)<\/span>/);
-assert.match(html, />삭제<\/span> <span[^>]+line-through/);
+assert.doesNotMatch(html, />삭제<\/span>|>추가<\/span>/);
 assert.match(html, /border-left:3px solid #64748b/);
 assert.ok(!html.includes('>SAM</span>'));
-assert.match(html, /background:#eff6ff;color:#1d4ed8/);
-assert.match(html, /background:#fef2f2;color:#b42318/);
 assert.ok(text.includes('쪼코 (5.2 kg · #12345 · 푸들) A1 [연장]'));
 assert.ok(text.includes('maro 1mpk **__SC__** (21시)'));
-assert.ok(text.includes('**[추가]** B12'));
-assert.ok(text.includes('**[삭제]** ~~cefa'));
+assert.ok(!text.includes('[추가]'));
+assert.ok(!text.includes('[삭제]'));
 assert.ok(text.includes('~~cefa 20mpk IV (17시)~~'));
 
 const oldWeight = patient('체중변경', false, [item('SAM', '22mpk', 'IV', [['오늘', 17, 17]])]);
@@ -83,7 +81,7 @@ assert.ok(context.__test.asText(weightChangeSections).includes('[체중 4.8 kg�
 
 const unchanged = context.__test.compareSnapshot(current, JSON.parse(JSON.stringify(current)), states);
 assert.strictEqual(unchanged.changes, 0);
-assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal }]).includes('처치 업데이트'));
+assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal }]).includes('[변경]'));
 assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal }]).includes('color:#c2410c'));
 
 const bloodTitleHtml = context.__test.patientTitleHtml('솜이(오*호) (#12345 · 말티즈)');
@@ -133,7 +131,7 @@ const multipleAdds = context.__test.compareSnapshot(
   {}
 );
 assert.strictEqual(multipleAdds.changes, 1);
-assert.strictEqual(multipleAdds.changeKinds.added, 1);
+assert.strictEqual(multipleAdds.changeKinds.changed, 1);
 
 const activeSam = patient('취소변경', false, [item('SAM', '22mpk', 'IV', [
   ['오늘', 17, 17], ['내일', 1, 101], ['내일', 9, 109],

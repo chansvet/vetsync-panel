@@ -25,7 +25,7 @@ fs.writeFileSync('vetsync-panel.bookmarklet.txt', url);
 
 const USERSCRIPT_BASE = 'https://chansvet.github.io/vetsync-panel';
 const AUTO_URL = 'https://vetsync4.vetu1.com/?vetsync-panel=1';
-const USERSCRIPT_VERSION = '2.0.3';
+const USERSCRIPT_VERSION = '2.1.0';
 const userscriptMeta = `// ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
