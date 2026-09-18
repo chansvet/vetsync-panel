@@ -24,8 +24,11 @@ const url = 'javascript:' + minimalEncode(stripped + '\nvoid 0;');
 fs.writeFileSync('vetsync-panel.bookmarklet.txt', url);
 
 const USERSCRIPT_BASE = 'https://chansvet.github.io/vetsync-panel';
+const LATEST_SCRIPT_URL = USERSCRIPT_BASE + '/vetsync-panel.latest.js';
+const autoBookmarklet = "javascript:(()=>{const s=document.createElement('script');s.src='" + LATEST_SCRIPT_URL + "?v='+Date.now();document.documentElement.appendChild(s)})()";
+fs.writeFileSync('vetsync-panel.latest.js', stripped + '\n');
 const AUTO_URL = 'https://vetsync4.vetu1.com/?vetsync-panel=1';
-const USERSCRIPT_VERSION = '2.1.10';
+const USERSCRIPT_VERSION = '2.1.11';
 const userscriptMeta = `// ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
@@ -160,9 +163,9 @@ const page = `<!doctype html>
 
   <section>
     <h2>확장 설치가 어려울 때 · 북마크 방식</h2>
-    <p>아래 버튼을 북마크바로 끌어다 놓으세요.</p>
-    <a id="bookmarklet-link" class="drag" href="PLACEHOLDER">VetSync 패널</a>
-    <p class="note">이 북마크는 업데이트마다 교체가 필요합니다. 확장 설치가 불가할 때만 사용하세요.</p>
+    <p>아래 버튼을 북마크에 한 번만 등록하세요. 누를 때마다 최신 패널 파일을 불러옵니다.</p>
+    <a id="bookmarklet-link" class="drag" href="PLACEHOLDER">VetSync 패널 · 자동 업데이트</a>
+    <p class="note">이미 예전 북마크를 등록했다면 이 페이지의 새 북마크로 한 번만 교체하세요. 이후에는 주소를 바꿀 필요가 없습니다.</p>
   </section>
 
   <section>
@@ -177,14 +180,14 @@ const page = `<!doctype html>
   <section>
     <h2>아이폰 Safari · 북마크 방식</h2>
     <ol>
-      <li>아래 <b>주소 복사</b>를 누릅니다.</li>
+      <li>아래 <b>자동 업데이트 주소 복사</b>를 누릅니다.</li>
       <li>Safari에서 아무 페이지나 북마크에 추가합니다. 이름은 <b>VetSync 패널</b>로 합니다.</li>
       <li>북마크 목록에서 <b>편집</b>을 누르고 방금 만든 북마크를 엽니다.</li>
       <li>주소 칸을 전부 지우고 복사한 것을 붙여넣습니다.</li>
-      <li>이후에는 VetSync에 로그인하고 북마크의 <b>VetSync 패널</b>만 누릅니다.</li>
+      <li>이후에는 VetSync에 로그인하고 북마크의 <b>VetSync 패널</b>만 누릅니다. 최신 코드가 자동으로 적용됩니다.</li>
     </ol>
     <textarea id="code" readonly></textarea>
-    <button id="copy">주소 복사</button>
+    <button id="copy">자동 업데이트 주소 복사</button>
   </section>
 
   <section>
@@ -226,7 +229,7 @@ const page = `<!doctype html>
 </script>
 </body>
 </html>
-`.replace('PLACEHOLDER', url.replace(/"/g, '&quot;'));
+`.replace('PLACEHOLDER', autoBookmarklet.replace(/"/g, '&quot;'));
 
 fs.writeFileSync('bookmarklet-install.html', page);
 fs.writeFileSync('index.html', page);

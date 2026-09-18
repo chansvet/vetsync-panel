@@ -1,5 +1,3 @@
-// build-bookmarklet.js 가 생성한 파일이다. 직접 고치지 말고 vetsync-panel.src.js 를 고칠 것.
-window.__VETSYNC_BUTTON = true;
 (() => {
 const createDoseEngine = (drugs) => {
 const normalize = (s) => String(s || '').toLowerCase().replace(/[\s._-]+/g, '');
