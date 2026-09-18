@@ -117,6 +117,8 @@ assert.equal(frequencyShift.patients.test.items.length, 1);
 assert.equal(frequencyShift.patients.test.items[0].dose, '2mpk');
 assert.deepEqual(JSON.parse(JSON.stringify(frequencyShift.patients.test.items[0].times.map((time) => time.frequency))), ['BID', 'SID']);
 assert.equal(engine.calculate('Unknown', '2mpk', '5 kg', '', { concentration: 10, concentrationUnit: 'mg' }).text, '1.00 mL');
+assert.equal(engine.calculate('Unknown', '2mpk', '5 kg', '', { concentration: 10000, concentrationUnit: 'ug' }).text, '1.00 mL');
+assert.equal(engine.calculate('Unknown', '2000ug/kg', '5 kg', '', { concentration: 10, concentrationUnit: 'mg' }).text, '1.00 mL');
 assert.equal(engine.calculate('enro', '', '7.69 kg', '1:1 희석').text, '1.54 mL');
 assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('enro 1:1 희석'))),
   { drug: 'enro', dose: '', route: '', frequency: '', note: '' });
@@ -124,10 +126,14 @@ const diluted = snapshot({ ...row('enro', '', 17, false, '7.69 kg'), dilution: {
 const dilutedHtml = ctx.api.render([{ heading: '주사', groups: ctx.api.compareSnapshot(diluted, null, {}).normal }]);
 assert.match(dilutedHtml, /1\.54 mL \+ NS 1\.54 mL/);
 assert.match(dilutedHtml, /1:1 희석/);
-const manualSnapshot = snapshot({ ...row('Unknown', '2mpk'), weight: '- kg' });
+const manualSnapshot = snapshot({ ...row('Unknown', ''), weight: '- kg' });
 const manualHtml = ctx.api.render([{ heading: '수기 입력', groups: ctx.api.compareSnapshot(manualSnapshot, null, {}).normal }]);
-assert.doesNotMatch(manualHtml, /data-manual-box|몸무게 입력 안됨|역가 입력 안됨/);
-assert.match(manualHtml, /font-size:13px;color:#b45309;font-weight:700/);
+assert.match(manualHtml, /data-manual-box/);
+assert.match(manualHtml, /data-manual="weight"/);
+assert.match(manualHtml, /data-manual="concentration"/);
+assert.doesNotMatch(manualHtml, /몸무게 입력 안됨|역가 입력 안됨|IU\/mL/);
+assert.match(manualHtml, /option value="mpk" selected/);
+assert.match(manualHtml, /option value="mg" selected/);
 console.log('2.0 계산·별칭·추가·제외·체중 변경 테스트 통과');
 if (process.argv.includes('--preview')) {
   const body = ctx.api.render([{ heading: 'VetSync 2.0 · 예시 환자', groups: diff.normal },

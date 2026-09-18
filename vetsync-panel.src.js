@@ -417,6 +417,16 @@
   const orderedTimeText = (times, item) => [...times].sort((a, b) => a.order - b.order)
     .map((t) => t.cancelled ? excluded([t]) : timeLabel(t, item)).join(', ');
   const routeLabel = (route) => /^(SC|IM)$/.test(route) ? U0 + route + U1 : route;
+  const MAN0 = '\uE020', MAN1 = '\uE021';
+  // 수기 값은 패널을 닫거나 새로고침하기 전까지 현재 화면에서 유지한다.
+  const manualEntries = new Map();
+  const manualKey = (pid, drug) => pid + ':' + normDrug(drug);
+  const readManual = (pid, drug) => manualEntries.get(manualKey(pid, drug)) || {};
+  const manualMarker = (item) => item.manualNeeded && Object.values(item.manualNeeded).some(Boolean) ? MAN0 + encodeURIComponent(JSON.stringify({
+    pid: item.pid, drug: item.drug, written: item.dose, instruction: item.doseConflict ? '용량 불일치' : '',
+    weightValue: item.patientWeight, dilutionRatio: item.dilution?.nsRatio || 0,
+    ...item.manualNeeded, values: item.manualValues || {},
+  })) + MAN1 : '';
 
   function makeSnapshot(rows) {
     const patients = {};
@@ -443,10 +453,22 @@
     });
     Object.values(patients).forEach((p) => {
       p.items = Object.values(p.items).map((item) => {
-        const calculation = typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, p.weight,
-          item.doseConflict ? '용량 불일치' : '') : undefined;
+        const registered = typeof doseEngine !== 'undefined' && doseEngine.find(item.drug);
+        const values = readManual(p.pid, item.drug);
+        const missingWeight = !/^\d+(?:\.\d+)? kg$/.test(p.weight || '');
+        const weight = missingWeight && Number(values.weight) > 0 ? Number(values.weight) + ' kg' : p.weight;
+        const calculation = typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, weight,
+          item.doseConflict ? '용량 불일치' : '', {
+            written: values.dose && values.doseUnit ? values.dose + values.doseUnit : '',
+            concentration: values.concentration,
+            concentrationUnit: values.concentrationUnit,
+          }) : undefined;
         return {
-          ...item, times: item.times.sort((a, b) => a.order - b.order), calculation,
+          ...item, times: item.times.sort((a, b) => a.order - b.order), calculation, manualValues: values,
+          patientWeight: weight, manualNeeded: {
+            weight: missingWeight, dose: (!registered && !item.dose) || item.doseConflict,
+            concentration: !registered || !(registered.conc > 0),
+          },
         };
       });
     });
@@ -459,7 +481,9 @@
     const allCancelled = item.times.length > 0 && active(item).length === 0;
     const oldTimes = new Map((prev ? active(prev) : []).map((t) => [timeKey(t), t]));
     const newTimes = new Set(active(item).map(timeKey));
-    const changedDose = prev && (JSON.stringify(calc) !== JSON.stringify(prev.calculation) ||
+    const manualCalculation = (item.manualNeeded && Object.values(item.manualNeeded).some(Boolean)) ||
+      (prev && prev.manualNeeded && Object.values(prev.manualNeeded).some(Boolean));
+    const changedDose = prev && ((!manualCalculation && JSON.stringify(calc) !== JSON.stringify(prev.calculation)) ||
       item.dose !== prev.dose || item.route !== prev.route);
     const displayTimes = [...item.times].map((t) => {
       let text = t.cancelled ? (allCancelled ? excludedCancelled([t]) : excluded([t])) : timeLabel(t, item);
@@ -489,7 +513,7 @@
       (item.note || item.instruction ? ' · ' + [item.note, item.instruction].filter(Boolean).join(', ') : '');
     return (kind === 'removed' ? cancelled(main) : main) +
       (basis ? '\n' + S0 + (kind === 'removed' || allCancelled ? cancelled(basis) : basis) + S1 : '') +
-      '';
+      (kind === 'removed' ? '' : manualMarker(item));
   };
 
   const rawItem = (item) => {
@@ -692,6 +716,38 @@
 
   // ---- 화면 ----
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const manualHtml = (encoded) => {
+    let data;
+    try { data = JSON.parse(decodeURIComponent(encoded)); } catch (_) { return ''; }
+    const v = { ...(data.values || {}), ...readManual(data.pid, data.drug) };
+    const input = (field, value, placeholder, ariaLabel) => '<input data-manual="' + field + '" aria-label="' + ariaLabel +
+      '" autocomplete="off" inputmode="decimal" type="number" min="0" step="any" placeholder="' + placeholder +
+      '" value="' + esc(value || '') + '" style="box-sizing:border-box;width:62px;height:28px;border:1px solid #cbd5e1;border-radius:4px;' +
+      'background:#fff;color:#111827;padding:0 5px;font:600 13px/1 system-ui">';
+    const select = (field, value, options, ariaLabel) => '<select data-manual="' + field + '" aria-label="' + ariaLabel +
+      '" autocomplete="off" style="height:28px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#334155;' +
+      'padding:0 3px;font:600 12px/1 system-ui">' + options.map((o) =>
+        '<option value="' + o[0] + '"' + (value === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
+    const doseUnit = v.doseUnit || (/\b(?:ug|mcg)\s*\/\s*kg\b/i.test(data.written || '') ? 'ug/kg' : 'mpk');
+    const concentrationUnit = v.concentrationUnit || 'mg';
+    const fields = [];
+    if (data.weight) fields.push(input('weight', v.weight, '체중 kg', '체중(kg)'));
+    if (data.dose) {
+      fields.push(input('dose', v.dose, '용량', '약물 용량'));
+      fields.push(select('doseUnit', doseUnit, [['mpk', 'mg/kg'], ['ug/kg', 'µg/kg'], ['ml/kg', 'mL/kg'], ['mg', 'mg/환자']], '용량 단위'));
+    }
+    if (data.concentration) {
+      fields.push(input('concentration', v.concentration, '농도', '농도'));
+      fields.push(select('concentrationUnit', concentrationUnit, [['mg', 'mg/mL'], ['ug', 'µg/mL']], '농도 단위'));
+    }
+    return '<div data-manual-box data-pid="' + esc(data.pid) + '" data-drug="' + esc(data.drug) + '" data-written="' + esc(data.written) +
+      '" data-weight-value="' + esc(data.weightValue || '') + '" data-dilution-ratio="' + esc(data.dilutionRatio || '') +
+      '" data-instruction="' + esc(data.instruction) + '" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;' +
+      'margin-top:4px;padding:5px 6px;border-left:2px solid #94a3b8;background:#f8fafc">' +
+      '<span style="font-size:11px;color:#64748b;font-weight:700;white-space:nowrap">수기</span>' + fields.join('') +
+      '<output data-manual-result aria-live="polite" style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;color:#0f766e">' +
+      '<strong data-manual-volume style="font-size:14px">입력 필요</strong><span data-manual-basis style="font-size:11px;font-weight:500;color:#64748b"></span></output></div>';
+  };
   const toHtml = (s) => esc(s)
     .split('\uE00A').join('<span style="background:#fef3c7;color:#92400e;padding:0 3px;border-radius:2px">').split('\uE00B').join('</span>')
     .replace(/\n/g, '<br>')
@@ -709,7 +765,7 @@
     .split(B0).join('<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">').split(B1).join('</span>')
     .split(Q0).join('<span style="font-size:13px;color:#b45309;font-weight:700">').split(Q1).join('</span>')
     .split('\uE030').join('<strong style="font-weight:750">').split('\uE031').join('</strong>')
-    ;
+    .replace(new RegExp(MAN0 + '(.+?)' + MAN1, 'g'), (_, encoded) => manualHtml(encoded));
   const asText = (sections) => sections.map((s) =>
     s.heading + (s.reviewNote ? '\n' + s.reviewNote : '') + '\n' + s.groups.map((g) =>
       (g.title ? g.title + ' ' + g.cage + (g.previousWeight ? ' [체중 ' + g.previousWeight + '→' + g.weight + ']' : '') +
@@ -729,6 +785,7 @@
     .split(D0).join('**[').split(D1).join(']**')
     .split(B0).join('~~').split(B1).join('~~')
     .split(Q0).join('').split(Q1).join('')
+    .replace(new RegExp(MAN0 + '.+?' + MAN1, 'g'), '')
     .split('\uE030').join('**').split('\uE031').join('**');
 
   const patientTitleHtml = (title, previousWeight = '') => {
@@ -808,7 +865,7 @@
       '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
       TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
         'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-      '<span style="flex:1"></span><span style="font-size:11px">2.1.5</span>' +
+      '<span style="flex:1"></span><span style="font-size:11px">2.1.6</span>' +
       '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
       '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
       '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -851,6 +908,35 @@
       };
       const refreshButton = body.querySelector('#vsp-refresh');
       if (refreshButton) refreshButton.onclick = () => show('inj', true);
+      body.querySelectorAll('[data-manual-box]').forEach((manualBox) => {
+        const update = () => {
+          const value = (name) => manualBox.querySelector('[data-manual="' + name + '"]')?.value || '';
+          const values = {
+            weight: value('weight'), dose: value('dose'), doseUnit: value('doseUnit'),
+            concentration: value('concentration'), concentrationUnit: value('concentrationUnit'),
+          };
+          manualEntries.set(manualKey(manualBox.dataset.pid, manualBox.dataset.drug), values);
+          const result = doseEngine.calculate(manualBox.dataset.drug, manualBox.dataset.written,
+            values.weight ? values.weight + ' kg' : manualBox.dataset.weightValue,
+            manualBox.dataset.instruction, {
+              written: values.dose && values.doseUnit ? values.dose + values.doseUnit : '',
+              concentration: values.concentration, concentrationUnit: values.concentrationUnit,
+            });
+          const output = manualBox.querySelector('[data-manual-result]');
+          const volume = output.querySelector('[data-manual-volume]');
+          const basis = output.querySelector('[data-manual-basis]');
+          const nsRatio = Number(manualBox.dataset.dilutionRatio || 0);
+          const nsText = result.volume != null && nsRatio > 0 ? ' + NS ' + volumeText(result.volume * nsRatio) + ' mL' : '';
+          volume.textContent = result.volume == null ? result.text : result.text + nsText;
+          volume.style.color = result.volume == null ? '#b45309' : '#0f766e';
+          basis.textContent = result.volume == null ? '' : result.basis + (nsText ? ' · 희석 NS 포함' : '');
+        };
+        manualBox.querySelectorAll('input,select').forEach((control) => {
+          control.addEventListener('input', update);
+          control.addEventListener('change', update);
+        });
+        update();
+      });
     };
 
     const show = async (id, force = false) => {
