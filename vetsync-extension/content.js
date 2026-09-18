@@ -371,11 +371,13 @@ const parts = row.displayName.split(/[,()[\]{}]/).map((s) => s.trim()).filter(Bo
 const hits = parts.filter((p) => HANDLING.test(p));
 return hits.length ? hits.join(', ') : '';
 };
-const breedOf = (patient) => {
+const breedOf = (patient = {}) => {
 const breed = patient.breedName || patient.breedLabel || patient.breedDisplayName ||
 patient.speciesBreed || patient.breed;
-return typeof breed === 'object' ? (breed.name || breed.label || breed.displayName || '품종 미상') :
-(breed || '품종 미상');
+if (breed && typeof breed === 'object') {
+return breed.name || breed.label || breed.displayName || '품종 미상';
+}
+return breed || '품종 미상';
 };
 const patientTitle = (name, code, breed, weight = '') => {
 const patientCode = code ? (String(code).startsWith('#') ? String(code) : '#' + code) : '';

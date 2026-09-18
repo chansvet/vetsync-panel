@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.1.8
+// @version      2.1.9
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -395,11 +395,13 @@
     const hits = parts.filter((p) => HANDLING.test(p));
     return hits.length ? hits.join(', ') : '';
     };
-    const breedOf = (patient) => {
+    const breedOf = (patient = {}) => {
     const breed = patient.breedName || patient.breedLabel || patient.breedDisplayName ||
     patient.speciesBreed || patient.breed;
-    return typeof breed === 'object' ? (breed.name || breed.label || breed.displayName || '품종 미상') :
-    (breed || '품종 미상');
+    if (breed && typeof breed === 'object') {
+    return breed.name || breed.label || breed.displayName || '품종 미상';
+    }
+    return breed || '품종 미상';
     };
     const patientTitle = (name, code, breed, weight = '') => {
     const patientCode = code ? (String(code).startsWith('#') ? String(code) : '#' + code) : '';
