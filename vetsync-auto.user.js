@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.1.11
+// @version      2.1.12
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -64,7 +64,7 @@
     const volume = parseFloat(dose);
     return volume > 0 ? { volume, text: volumeText(volume) + ' mL', basis: '차트 mL' } : fail('용량 확인 필요');
     }
-    if (!drug && !dose) return fail('용량·농도 확인 필요');
+    if (!drug && !dose) return fail('용량·역가 확인 필요');
     let value = drug && drug.dose, unit = drug && (drug.unit || 'mg'), perKg = true, origin = '기본';
     if (dose) {
     const match = dose.match(/^(\d+(?:\.\d+)?)(mpk|mg\/kg|gpk|ug\/kg|mcg\/kg|iu\/kg|u\/kg|ml\/kg|mg|mg\/dog|mg\/cat)$/);
@@ -80,14 +80,14 @@
     if (!(value > 0)) return fail('용량 확인 필요');
     const manualConc = Number(overrides.concentration);
     const manualUnit = overrides.concentrationUnit || '';
-    if (manualConc > 0 && !manualUnit) return fail('농도 단위 확인 필요');
-    if (!drug && !(manualConc > 0)) return fail('농도 미등록');
+    if (manualConc > 0 && !manualUnit) return fail('역가 단위 확인 필요');
+    if (!drug && !(manualConc > 0)) return fail('역가 미등록');
     const drugUnit = drug && (drug.unit || 'mg');
     const massUnitPair = ['mg', 'ug'].includes(unit) && ['mg', 'ug'].includes(manualUnit);
     if (unit !== 'mL' && manualUnit && unit !== manualUnit && !massUnitPair) return fail('단위 확인 필요');
     if (unit !== 'mL' && !manualUnit && drug && ((unit === 'IU') !== (drugUnit === 'IU'))) return fail('단위 확인 필요');
     const conc = manualConc > 0 ? manualConc : drug && drug.conc;
-    if (unit !== 'mL' && !(conc > 0)) return fail('농도 확인 필요');
+    if (unit !== 'mL' && !(conc > 0)) return fail('역가 확인 필요');
     const concentrationUnit = manualUnit || drugUnit;
     const conversion = !manualUnit && unit === 'ug' ? 0.001 :
     unit === 'ug' && concentrationUnit === 'mg' ? 0.001 :
@@ -959,14 +959,14 @@
     fields.push(select('doseUnit', doseUnit, [['mpk', 'mg/kg'], ['ug/kg', 'µg/kg'], ['ml/kg', 'mL/kg'], ['mg', 'mg/환자']], '용량 단위'));
     }
     if (data.concentration) {
-    fields.push(input('concentration', v.concentration, '농도', '농도'));
-    fields.push(select('concentrationUnit', concentrationUnit, [['mg', 'mg/mL'], ['ug', 'µg/mL']], '농도 단위'));
+    fields.push(input('concentration', v.concentration, '역가', '역가'));
+    fields.push(select('concentrationUnit', concentrationUnit, [['mg', 'mg/mL'], ['ug', 'µg/mL']], '역가 단위'));
     }
     return '<div data-manual-box data-pid="' + esc(data.pid) + '" data-drug="' + esc(data.drug) + '" data-written="' + esc(data.written) +
     '" data-weight-value="' + esc(data.weightValue || '') + '" data-dilution-ratio="' + esc(data.dilutionRatio || '') +
     '" data-instruction="' + esc(data.instruction) + '" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;' +
     'margin-top:4px;padding:5px 6px;border-left:2px solid #94a3b8;background:#f8fafc">' +
-    '<span style="font-size:11px;color:#64748b;font-weight:700;white-space:nowrap">수기</span>' + fields.join('') +
+    fields.join('') +
     '<output data-manual-result aria-live="polite" style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;color:#0f766e">' +
     '<strong data-manual-volume style="font-size:14px">입력 필요</strong><span data-manual-basis style="font-size:11px;font-weight:500;color:#64748b"></span></output></div>';
     };
@@ -1020,10 +1020,10 @@
     const weightChanged = previousWeight && previousWeight !== '- kg' && previousWeight !== weight;
     const weightHtml = manualWeightNeeded ?
     '<span style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle">' +
-    '<input data-patient-weight data-pid="' + esc(pid) + '" type="number" inputmode="decimal" min="0" step="any" placeholder="체중" aria-label="' +
+    '<input data-patient-weight data-pid="' + esc(pid) + '" type="text" inputmode="decimal" autocomplete="off" placeholder="체중" aria-label="' +
     esc(name) + ' 체중(kg)' + '" value="' + esc(manualWeight || '') + '" style="box-sizing:border-box;width:58px;height:27px;border:1px solid #94a3b8;border-radius:4px;' +
-    'background:#fff;color:#111827;padding:0 4px;text-align:center;font:700 13px/1 system-ui;vertical-align:middle">' +
-    '<span style="font-size:13px;color:#64748b;font-weight:700">kg</span></span>' : weightChanged ?
+    'background:#fff;color:#111827;padding:0 3px;text-align:center;font:700 13px/1 system-ui;vertical-align:middle">' +
+    '<span style="font-size:13px;color:#64748b;font-weight:700;line-height:27px">kg</span></span>' : weightChanged ?
     '<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">' + esc(previousWeight) + '</span>→' +
     '<span style="color:#b45309;font-size:15px;font-weight:800">' + esc(weight) + '</span>' :
     '<span style="color:#111827;font-size:15px;font-weight:800">' + esc(weight) + '</span>';
@@ -1091,7 +1091,7 @@
     '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
     TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
     'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-    '<span style="flex:1"></span><span style="font-size:11px">2.1.11</span>' +
+    '<span style="flex:1"></span><span style="font-size:11px">2.1.12</span>' +
     '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
     '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';

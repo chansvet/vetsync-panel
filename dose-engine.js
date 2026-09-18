@@ -39,7 +39,7 @@ const createDoseEngine = (drugs) => {
       const volume = parseFloat(dose);
       return volume > 0 ? { volume, text: volumeText(volume) + ' mL', basis: '차트 mL' } : fail('용량 확인 필요');
     }
-    if (!drug && !dose) return fail('용량·농도 확인 필요');
+if (!drug && !dose) return fail('용량·역가 확인 필요');
     let value = drug && drug.dose, unit = drug && (drug.unit || 'mg'), perKg = true, origin = '기본';
     if (dose) {
       const match = dose.match(/^(\d+(?:\.\d+)?)(mpk|mg\/kg|gpk|ug\/kg|mcg\/kg|iu\/kg|u\/kg|ml\/kg|mg|mg\/dog|mg\/cat)$/);
@@ -55,14 +55,14 @@ const createDoseEngine = (drugs) => {
     if (!(value > 0)) return fail('용량 확인 필요');
     const manualConc = Number(overrides.concentration);
     const manualUnit = overrides.concentrationUnit || '';
-    if (manualConc > 0 && !manualUnit) return fail('농도 단위 확인 필요');
-    if (!drug && !(manualConc > 0)) return fail('농도 미등록');
+if (manualConc > 0 && !manualUnit) return fail('역가 단위 확인 필요');
+if (!drug && !(manualConc > 0)) return fail('역가 미등록');
     const drugUnit = drug && (drug.unit || 'mg');
     const massUnitPair = ['mg', 'ug'].includes(unit) && ['mg', 'ug'].includes(manualUnit);
     if (unit !== 'mL' && manualUnit && unit !== manualUnit && !massUnitPair) return fail('단위 확인 필요');
     if (unit !== 'mL' && !manualUnit && drug && ((unit === 'IU') !== (drugUnit === 'IU'))) return fail('단위 확인 필요');
     const conc = manualConc > 0 ? manualConc : drug && drug.conc;
-    if (unit !== 'mL' && !(conc > 0)) return fail('농도 확인 필요');
+if (unit !== 'mL' && !(conc > 0)) return fail('역가 확인 필요');
     const concentrationUnit = manualUnit || drugUnit;
     const conversion = !manualUnit && unit === 'ug' ? 0.001 :
       unit === 'ug' && concentrationUnit === 'mg' ? 0.001 :

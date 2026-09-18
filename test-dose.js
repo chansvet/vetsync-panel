@@ -154,6 +154,8 @@ const manualSnapshot = snapshot({ ...row('Unknown', ''), weight: '- kg' });
 const manualHtml = ctx.api.render([{ heading: '수기 입력', groups: ctx.api.compareSnapshot(manualSnapshot, null, {}).normal }]);
 assert.match(manualHtml, /data-manual-box/);
 assert.match(manualHtml, /data-manual="concentration"/);
+assert.match(manualHtml, /placeholder="역가"/);
+assert.doesNotMatch(manualHtml, /<span[^>]*>수기<\/span>/);
 assert.match(manualHtml, /data-patient-weight/);
 assert.doesNotMatch(manualHtml, /data-manual="weight"/);
 assert.doesNotMatch(manualHtml, /몸무게 입력 안됨|역가 입력 안됨|IU\/mL/);
