@@ -67,6 +67,10 @@ const instructionOnlyDetail = { sections: [{ section: 'TREATMENT', rows: [{
 }]}] };
 const instructionOnlyChart = { discharged: false, cageLabel: 'A1', patient: { patientId: 'instruction-only', name: '지시사항', hospitalPatientCode: '1', breed: '믹스' } };
 assert.equal(ctx.api.pickInj(instructionOnlyChart, instructionOnlyDetail, '2026-09-16', [17], '오늘', true, '5 kg')[0].dose, '22mpk');
+const meloxicamRows = ctx.api.pickInj(instructionOnlyChart, { sections: [{ section: 'TREATMENT', rows: [{
+  displayName: 'Meloxicam', cells: [{ hourSlot: 17, status: 'PLANNED' }],
+}]}] }, '2026-09-16', [17], '오늘', true, '5 kg');
+assert.equal(meloxicamRows[0].route, 'SC');
 const slashDetail = { sections: [{ section: 'TREATMENT', rows: [{
   displayName: 'Chlorpheniramine 0.2 / Maropitant 1', cells: [{ hourSlot: 17, status: 'PLANNED' }],
 }]}] };
@@ -149,8 +153,9 @@ assert.doesNotMatch(overDilutionHtml, /NS/);
 const manualSnapshot = snapshot({ ...row('Unknown', ''), weight: '- kg' });
 const manualHtml = ctx.api.render([{ heading: '수기 입력', groups: ctx.api.compareSnapshot(manualSnapshot, null, {}).normal }]);
 assert.match(manualHtml, /data-manual-box/);
-assert.match(manualHtml, /data-manual="weight"/);
 assert.match(manualHtml, /data-manual="concentration"/);
+assert.match(manualHtml, /data-patient-weight/);
+assert.doesNotMatch(manualHtml, /data-manual="weight"/);
 assert.doesNotMatch(manualHtml, /몸무게 입력 안됨|역가 입력 안됨|IU\/mL/);
 assert.match(manualHtml, /option value="mpk" selected/);
 assert.match(manualHtml, /option value="mg" selected/);
