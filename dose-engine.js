@@ -28,6 +28,7 @@ const createDoseEngine = (drugs) => {
     if (dose.startsWith('.')) dose = '0' + dose;
     // Conflicting or additional dosing instructions must not silently use a default.
     if (/용량 불일치/.test(instruction) && !overrides.written) return fail('용량 불일치');
+    if (/희석 확인 필요/.test(instruction)) return fail('희석 확인 필요');
     const instructionWithoutDilution = String(instruction || '')
       .replace(/\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*희석|\d+(?:\.\d+)?\s*배\s*희석/ig, ' ')
       .trim();

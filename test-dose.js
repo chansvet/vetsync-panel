@@ -24,7 +24,7 @@ assert.equal(engine.calculate('G-CSF', '', '4 kg').basis, '5 µg/kg(기본) · 1
 assert.equal(engine.calculate('SAM', '0mpk', '5 kg').volume, null);
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")) +
-  'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,isInjection,pickInj,isLabAtDraw};})();';
+  'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,dilutionFrom,isInjection,pickInj,isLabAtDraw};})();';
 const ctx = { doseEngine: engine };
 vm.runInNewContext(source, ctx);
 assert.equal(ctx.api.weightValue('오후 9시 퇴원'), '');
@@ -56,6 +56,12 @@ assert.equal(ctx.api.doseFromInstruction('22mpk'), '22mpk');
 assert.equal(ctx.api.doseFromInstruction('용량: 22'), '22');
 assert.equal(ctx.api.doseFromInstruction('2번'), '');
 assert.equal(ctx.api.doseFromInstruction('1시간 후'), '');
+assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.dilutionFrom('enro 5 1:1 희석'))),
+  { label: '1:1 희석', nsRatio: 1, valid: true, warning: '' });
+assert.equal(ctx.api.dilutionFrom('enro 5 4배 희석').valid, false);
+assert.equal(ctx.api.dilutionFrom('enro51:1 희석').valid, false);
+assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('enro 5 1:1 희석'))),
+  { drug: 'enro', dose: '5', route: '', frequency: '', note: '' });
 const instructionOnlyDetail = { sections: [{ section: 'TREATMENT', rows: [{
   displayName: 'SAM IV TID', instructionText: '22mpk', cells: [{ hourSlot: 17, status: 'PLANNED' }],
 }]}] };
@@ -126,6 +132,20 @@ const diluted = snapshot({ ...row('enro', '', 17, false, '7.69 kg'), dilution: {
 const dilutedHtml = ctx.api.render([{ heading: '주사', groups: ctx.api.compareSnapshot(diluted, null, {}).normal }]);
 assert.match(dilutedHtml, /1\.54 mL \+ NS 1\.54 mL/);
 assert.match(dilutedHtml, /1:1 희석/);
+const parsedDilutionRows = ctx.api.pickInj(instructionOnlyChart, { sections: [{ section: 'TREATMENT', rows: [{
+  displayName: 'enro 5 1:1 희석', cells: [{ hourSlot: 17, status: 'PLANNED' }],
+}]}] }, '2026-09-16', [17], '오늘', true, '7.69 kg');
+assert.equal(parsedDilutionRows[0].drug, 'enro');
+assert.equal(parsedDilutionRows[0].dose, '5');
+assert.equal(parsedDilutionRows[0].dilution.valid, true);
+const overDilutionRows = ctx.api.pickInj(instructionOnlyChart, { sections: [{ section: 'TREATMENT', rows: [{
+  displayName: 'enro 5 4배 희석', cells: [{ hourSlot: 17, status: 'PLANNED' }],
+}]}] }, '2026-09-16', [17], '오늘', true, '7.69 kg');
+const overDilution = ctx.api.makeSnapshot(overDilutionRows);
+assert.equal(overDilution.patients['instruction-only'].items[0].calculation.text, '희석 확인 필요');
+const overDilutionHtml = ctx.api.render([{ heading: '주사', groups: ctx.api.compareSnapshot(overDilution, null, {}).normal }]);
+assert.match(overDilutionHtml, /4배 희석 확인 필요/);
+assert.doesNotMatch(overDilutionHtml, /NS/);
 const manualSnapshot = snapshot({ ...row('Unknown', ''), weight: '- kg' });
 const manualHtml = ctx.api.render([{ heading: '수기 입력', groups: ctx.api.compareSnapshot(manualSnapshot, null, {}).normal }]);
 assert.match(manualHtml, /data-manual-box/);

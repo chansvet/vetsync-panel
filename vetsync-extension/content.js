@@ -29,6 +29,7 @@ let dose = String(overrides.written || written || '').replace(/\s/g, '').toLower
 if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(dose)) dose += 'mpk';
 if (dose.startsWith('.')) dose = '0' + dose;
 if (/용량 불일치/.test(instruction) && !overrides.written) return fail('용량 불일치');
+if (/희석 확인 필요/.test(instruction)) return fail('희석 확인 필요');
 const instructionWithoutDilution = String(instruction || '')
 .replace(/\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*희석|\d+(?:\.\d+)?\s*배\s*희석/ig, ' ')
 .trim();
@@ -466,7 +467,8 @@ const notes = [];
 const frequency = frequencyFrom(s);
 s = s.replace(/^(sam|famo)(?=\d)/i, '$1 ');
 s = s.replace(/\bprn\b/ig, ' ');
-s = s.replace(/\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*희석|\d+(?:\.\d+)?\s*배\s*희석/ig, ' ');
+s = s.replace(/(^|[\s,;()[\]{}])\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*(?:배\s*)?희석(?=$|[\s,;()[\]{}])/ig, '$1')
+.replace(/(^|[\s,;()[\]{}])\d+(?:\.\d+)?\s*배\s*희석(?=$|[\s,;()[\]{}])/ig, '$1');
 s = s.replace(/(\d+(?:\.\d+)?\s*\S*)\s*(?:->|→)\s*(\d)/g, '$2').replace(/\(\s*(\d+(?:\.\d+)?)\s*\)/g, ' $1 ');
 const pull = (re) => {
 const m = s.match(re);
@@ -496,15 +498,28 @@ const bare = value.match(/^(?:복용약|dose|용량)?\s*[:：]?\s*\(?((?:\d+(?:\
 return bare ? bare[1] : '';
 };
 const dilutionFrom = (text) => {
-const value = String(text || '').toLowerCase().replace(/\s+/g, '');
-const ratio = value.match(/(\d+(?:\.\d+)?):(\d+(?:\.\d+)?).*희석/);
-if (ratio && Number(ratio[1]) > 0) {
+const value = String(text || '').toLowerCase();
+const ratio = value.match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*(?:배\s*)?희석(?=$|[\s,;()[\]{}])/i);
+if (ratio) {
+const before = value[ratio.index - 1] || '';
 const drug = Number(ratio[1]);
-return { label: ratio[1] + ':' + ratio[2] + ' 희석', nsRatio: Number(ratio[2]) / drug };
+const ns = Number(ratio[2]);
+const factor = drug > 0 ? (drug + ns) / drug : Infinity;
+const valid = (!before || /[\s,;()[\]{}]/.test(before)) && drug > 0 && ns >= 0 && factor > 1 && factor <= 3;
+return {
+label: ratio[1] + ':' + ratio[2] + ' 희석', nsRatio: drug > 0 ? ns / drug : 0,
+valid, warning: valid ? '' : '희석 확인 필요',
+};
 }
-const times = value.match(/(\d+(?:\.\d+)?)배희석/);
-if (times && Number(times[1]) > 1) {
-return { label: times[1] + '배 희석', nsRatio: Number(times[1]) - 1 };
+const times = value.match(/(\d+(?:\.\d+)?)\s*배\s*희석(?=$|[\s,;()[\]{}])/i);
+if (times) {
+const before = value[times.index - 1] || '';
+const factor = Number(times[1]);
+const valid = (!before || /[\s,;()[\]{}]/.test(before)) && factor > 1 && factor <= 3;
+return {
+label: times[1] + '배 희석', nsRatio: factor > 0 ? factor - 1 : 0,
+valid, warning: valid ? '' : '희석 확인 필요',
+};
 }
 return null;
 };
@@ -591,7 +606,7 @@ const manualKey = (pid, drug) => pid + ':' + normDrug(drug);
 const readManual = (pid, drug) => manualEntries.get(manualKey(pid, drug)) || {};
 const manualMarker = (item) => item.manualNeeded && Object.values(item.manualNeeded).some(Boolean) ? MAN0 + encodeURIComponent(JSON.stringify({
 pid: item.pid, drug: item.drug, written: item.dose, instruction: item.doseConflict ? '용량 불일치' : '',
-weightValue: item.patientWeight, dilutionRatio: item.dilution?.nsRatio || 0,
+weightValue: item.patientWeight, dilutionRatio: item.dilution?.valid === false ? 0 : (item.dilution?.nsRatio || 0),
 ...item.manualNeeded, values: item.manualValues || {},
 })) + MAN1 : '';
 function makeSnapshot(rows) {
@@ -623,8 +638,10 @@ const registered = typeof doseEngine !== 'undefined' && doseEngine.find(item.dru
 const values = readManual(p.pid, item.drug);
 const missingWeight = !/^\d+(?:\.\d+)? kg$/.test(p.weight || '');
 const weight = missingWeight && Number(values.weight) > 0 ? Number(values.weight) + ' kg' : p.weight;
+const instruction = item.dilution && item.dilution.valid === false ? '희석 확인 필요' :
+(item.doseConflict ? '용량 불일치' : '');
 const calculation = typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, weight,
-item.doseConflict ? '용량 불일치' : '', {
+instruction, {
 written: values.dose && values.doseUnit ? values.dose + values.doseUnit : '',
 concentration: values.concentration,
 concentrationUnit: values.concentrationUnit,
@@ -658,20 +675,23 @@ return { order: t.order, text };
 if (prev) active(prev).filter((t) => !newTimes.has(timeKey(t)))
 .forEach((t) => displayTimes.push({ order: t.order, text: cancelled(timeLabel(t, prev)) }));
 const times = displayTimes.sort((a, b) => a.order - b.order).map((t) => t.text).join(', ');
-const dilutionText = calc.volume != null && item.dilution ? ' + NS ' + volumeText(calc.volume * item.dilution.nsRatio) + ' mL' : '';
-const currentAmount = calc.volume != null ? calc.text + dilutionText : calc.text;
-let amount = calc.volume == null ? Q0 + calc.text + Q1 : currentAmount;
+const dilutionText = calc.volume != null && item.dilution && item.dilution.valid !== false ?
+' + NS ' + volumeText(calc.volume * item.dilution.nsRatio) + ' mL' : '';
+const amountText = calc.volume == null && item.dilution?.valid === false ?
+item.dilution.label + ' 확인 필요' : calc.text;
+const currentAmount = calc.volume != null ? calc.text + dilutionText : amountText;
+let amount = calc.volume == null ? Q0 + amountText + Q1 : currentAmount;
 if (changedDose && prev.calculation && prev.calculation.text !== calc.text) {
-const previousDilution = prev.calculation.volume != null && prev.dilution ?
+const previousDilution = prev.calculation.volume != null && prev.dilution && prev.dilution.valid !== false ?
 ' + NS ' + volumeText(prev.calculation.volume * prev.dilution.nsRatio) + ' mL' : '';
 const previousAmount = prev.calculation.volume != null ? prev.calculation.text + previousDilution : prev.calculation.text;
-amount = beforeValue(previousAmount) + ' → ' + (calc.volume == null ? Q0 + currentAmount + Q1 : orange(currentAmount));
+amount = beforeValue(previousAmount) + ' → ' + (calc.volume == null ? Q0 + amountText + Q1 : orange(currentAmount));
 }
 const route = prev && item.route !== prev.route ? beforeValue(routeLabel(prev.route) || '미기재') + '→' + orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
 let main = '\uE030' + item.drug + '\uE031 · ' + times + (route ? ' · ' + route : '');
 if (allCancelled) main = cancelled(main);
 else if (kind === 'added') main = orange(main);
-const dilutionBasis = item.dilution ? item.dilution.label : '';
+const dilutionBasis = item.dilution && item.dilution.valid !== false ? item.dilution.label : '';
 const doseBasis = calc.nonDefault ? '\uE00A' + calc.doseText + '\uE00B' + (calc.concText ? ' · ' + calc.concText : '') : calc.basis;
 const basis = M0 + amount + M1 + (doseBasis ? ' · ' + doseBasis : '') +
 (dilutionBasis ? ' · ' + dilutionBasis : '') +
@@ -1015,7 +1035,7 @@ box.innerHTML =
 '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
 TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
 'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-'<span style="flex:1"></span><span style="font-size:11px">2.1.6</span>' +
+'<span style="flex:1"></span><span style="font-size:11px">2.1.7</span>' +
 '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
 '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
