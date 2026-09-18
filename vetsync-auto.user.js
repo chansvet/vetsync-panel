@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.1.13
+// @version      2.1.14
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -1021,9 +1021,9 @@
     const weightHtml = manualWeightNeeded ?
     '<span style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle">' +
     '<input data-patient-weight data-pid="' + esc(pid) + '" type="text" inputmode="decimal" autocomplete="off" placeholder="체중" aria-label="' +
-    esc(name) + ' 체중(kg)' + '" value="' + esc(manualWeight || '') + '" style="box-sizing:border-box;width:48px;height:24px;border:1px solid #94a3b8;border-radius:4px;' +
-    'background:#fff;color:#111827;padding:0 2px;text-align:center;font:700 12px/1 system-ui;vertical-align:middle">' +
-    '<span style="font-size:12px;color:#64748b;font-weight:700;line-height:24px">kg</span></span>' : weightChanged ?
+    esc(name) + ' 체중(kg)' + '" value="' + esc(manualWeight || '') + '" style="box-sizing:border-box;width:40px;height:20px;border:1px solid #94a3b8;border-radius:3px;' +
+    'background:#fff;color:#111827;padding:0 1px;text-align:center;font:700 12px/18px system-ui;vertical-align:middle">' +
+    '<span style="font-size:12px;color:#64748b;font-weight:700;line-height:20px">kg</span></span>' : weightChanged ?
     '<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">' + esc(previousWeight) + '</span>→' +
     '<span style="color:#b45309;font-size:15px;font-weight:800">' + esc(weight) + '</span>' :
     '<span style="color:#111827;font-size:15px;font-weight:800">' + esc(weight) + '</span>';
