@@ -25,7 +25,7 @@ fs.writeFileSync('vetsync-panel.bookmarklet.txt', url);
 
 const USERSCRIPT_BASE = 'https://chansvet.github.io/vetsync-panel';
 const AUTO_URL = 'https://vetsync4.vetu1.com/?vetsync-panel=1';
-const USERSCRIPT_VERSION = '2.1.3';
+const USERSCRIPT_VERSION = '2.1.4';
 const userscriptMeta = `// ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
@@ -85,7 +85,7 @@ ${stripped.split('\n').map((line) => '    ' + line).join('\n')}
         return;
       }
       const message = panel.textContent || '';
-      const expired = /접속이 만료됐습니다|로그인이 안 되어 있습니다|서버 응답 401/.test(message);
+      const expired = /접속이 만료됐습니다|로그인이 안 되어 있습니다|서버 응답 401|병원 접근 오류\(403\)/.test(message);
       if (expired) {
         clearInterval(watchAuth);
         if (sessionStorage.getItem(AUTH_RETRY) !== '1') {

@@ -204,8 +204,19 @@ const doseEngine = createDoseEngine([
 }
 ]
 );
-const API = 'https://api-vetsync4.vetu1.com/api/v1';
-const HOSPITAL_ID = '24';
+const API_ORIGIN = 'https://api-vetsync4.vetu1.com';
+const releasePrefix = () => {
+if (typeof document === 'undefined') return '';
+for (const script of Array.from(document.scripts || [])) {
+try {
+const match = new URL(script.src, location.href).pathname.match(/^(\/_releases\/[^/]+)/);
+if (match) return match[1];
+} catch (_) { /* 다음 스크립트를 확인한다. */ }
+}
+return '';
+};
+const API = API_ORIGIN + releasePrefix() + '/api/v1';
+const FALLBACK_HOSPITAL_ID = '24';
 const DRAW_HOUR = 9;
 const EVENING = [17, 18, 19, 20, 21, 22, 23];
 const NEXT = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -245,14 +256,27 @@ const d = new Date(date + 'T00:00:00+09:00');
 d.setDate(d.getDate() + n);
 return ymd(d);
 };
+const currentHospitalId = () => {
+try {
+const context = JSON.parse(localStorage.getItem('hospital-context') || 'null');
+if (context?.state?.hospitalId) return String(context.state.hospitalId);
+const auth = JSON.parse(localStorage.getItem('auth-storage') || 'null');
+const active = (auth?.state?.memberships || []).filter((membership) => membership.status === 'ACTIVE');
+if (active.length === 1 && active[0].hospitalId) return String(active[0].hospitalId);
+} catch (_) { /* 이전 저장 형식이면 기존 병원 번호를 사용한다. */ }
+return FALLBACK_HOSPITAL_ID;
+};
 const headers = () => {
 const raw = localStorage.getItem('auth-storage');
 if (!raw) throw new Error('로그인이 안 되어 있습니다.');
-return { Authorization: 'Bearer ' + JSON.parse(raw).state.accessToken, 'X-Hospital-Id': HOSPITAL_ID };
+const accessToken = JSON.parse(raw)?.state?.accessToken;
+if (!accessToken) throw new Error('로그인 정보가 없습니다. VetSync를 새로고침해 주세요.');
+return { Authorization: 'Bearer ' + accessToken, 'X-Hospital-Id': currentHospitalId() };
 };
 const get = async (path) => {
 const r = await fetch(API + path, { headers: headers() });
 if (r.status === 401) throw new Error('접속이 만료됐습니다. 새로고침하고 다시 눌러주세요.');
+if (r.status === 403) throw new Error('병원 접근 오류(403). VetSync를 새로고침한 뒤 다시 눌러주세요.');
 if (!r.ok) throw new Error('서버 응답 ' + r.status);
 return r.json();
 };
@@ -740,7 +764,7 @@ sortName: p.name, sortCage: p.cage, body: conds, note: '',
 });
 return { normal, cond, changes: changedPatients, changeKinds };
 }
-const baselineKey = (date) => INJ_BASELINE + HOSPITAL_ID + ':' + date;
+const baselineKey = (date) => INJ_BASELINE + currentHospitalId() + ':' + date;
 const checkedTime = (value) => {
 if (!value) return '시간 미기록';
 const date = new Date(value);
@@ -949,7 +973,7 @@ box.innerHTML =
 '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
 TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
 'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-'<span style="flex:1"></span><span style="font-size:11px">2.1.3</span>' +
+'<span style="flex:1"></span><span style="font-size:11px">2.1.4</span>' +
 '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
 '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';

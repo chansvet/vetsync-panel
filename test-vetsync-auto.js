@@ -34,7 +34,9 @@ assert.strictEqual(sessionA.getItem('vetsync-panel-auto-open'), '1');
 assert.ok(Number(sessionA.getItem('vetsync-panel-auto-open-at')) > 0);
 assert.strictEqual(timers.length, 1);
 
-assert.match(source, /@version\s+2\.1\.3/);
+assert.match(source, /@version\s+2\.1\.4/);
+assert.match(source, /hospital-context/);
+assert.match(source, /_releases/);
 assert.match(source, /@inject-into\s+auto/);
 assert.doesNotMatch(source, /@weight/);
 assert.doesNotMatch(source, /vsp-launcher/);
