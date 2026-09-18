@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.1.14
+// @version      2.1.15
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -704,7 +704,7 @@
     const active = (x) => x.times.filter((t) => !t.cancelled);
     const allCancelled = item.times.length > 0 && active(item).length === 0;
     const oldTimes = new Map((prev ? active(prev) : []).map((t) => [timeKey(t), t]));
-    const newTimes = new Set(active(item).map(timeKey));
+    const currentTimes = new Set(item.times.map(timeKey));
     const manualCalculation = (item.manualNeeded && Object.values(item.manualNeeded).some(Boolean)) ||
     (prev && prev.manualNeeded && Object.values(prev.manualNeeded).some(Boolean));
     const changedDose = prev && ((!manualCalculation && JSON.stringify(calc) !== JSON.stringify(prev.calculation)) ||
@@ -714,7 +714,7 @@
     if (prev && !t.cancelled && !oldTimes.has(timeKey(t))) text = orange(text);
     return { order: t.order, text };
     });
-    if (prev) active(prev).filter((t) => !newTimes.has(timeKey(t)))
+    if (prev) active(prev).filter((t) => !currentTimes.has(timeKey(t)))
     .forEach((t) => displayTimes.push({ order: t.order, text: cancelled(timeLabel(t, prev)) }));
     const times = displayTimes.sort((a, b) => a.order - b.order).map((t) => t.text).join(', ');
     const dilutionText = calc.volume != null && item.dilution && item.dilution.valid !== false ?

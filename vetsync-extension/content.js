@@ -680,7 +680,7 @@ const calc = item.calculation;
 const active = (x) => x.times.filter((t) => !t.cancelled);
 const allCancelled = item.times.length > 0 && active(item).length === 0;
 const oldTimes = new Map((prev ? active(prev) : []).map((t) => [timeKey(t), t]));
-const newTimes = new Set(active(item).map(timeKey));
+const currentTimes = new Set(item.times.map(timeKey));
 const manualCalculation = (item.manualNeeded && Object.values(item.manualNeeded).some(Boolean)) ||
 (prev && prev.manualNeeded && Object.values(prev.manualNeeded).some(Boolean));
 const changedDose = prev && ((!manualCalculation && JSON.stringify(calc) !== JSON.stringify(prev.calculation)) ||
@@ -690,7 +690,7 @@ let text = t.cancelled ? (allCancelled ? excludedCancelled([t]) : excluded([t]))
 if (prev && !t.cancelled && !oldTimes.has(timeKey(t))) text = orange(text);
 return { order: t.order, text };
 });
-if (prev) active(prev).filter((t) => !newTimes.has(timeKey(t)))
+if (prev) active(prev).filter((t) => !currentTimes.has(timeKey(t)))
 .forEach((t) => displayTimes.push({ order: t.order, text: cancelled(timeLabel(t, prev)) }));
 const times = displayTimes.sort((a, b) => a.order - b.order).map((t) => t.text).join(', ');
 const dilutionText = calc.volume != null && item.dilution && item.dilution.valid !== false ?

@@ -163,6 +163,7 @@ assert.strictEqual(cancelledChange.normal[0].updated, true);
 const cancelledChangeHtml = context.__test.render([{ heading: '주사', groups: cancelledChange.normal }]);
 assert.match(cancelledChangeHtml, /제외: 내일 9시/);
 assert.doesNotMatch(cancelledChangeHtml, /내일 9시<\/u> 취소|마지막 시간 취소/);
+assert.strictEqual((cancelledChangeHtml.match(/내일 9시/g) || []).length, 1);
 
 const reviewText = context.__test.asText([{ heading: '주사', reviewNote: '이전 확인 15:03 → 현재 확인 16:12', groups: [] }]);
 assert.ok(reviewText.includes('이전 확인 15:03 → 현재 확인 16:12'));
