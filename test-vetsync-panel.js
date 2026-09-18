@@ -87,6 +87,10 @@ assert.ok(!context.__test.render([{ heading: '주사', groups: unchanged.normal 
 const bloodTitleHtml = context.__test.patientTitleHtml('솜이(오*호) (#12345 · 말티즈)');
 assert.match(bloodTitleHtml, /솜이\(오\*호\).*#12345 · 말티즈/);
 assert.doesNotMatch(bloodTitleHtml, /font-size:15px[^>]+>#12345/);
+const manualWeightHtml = context.__test.patientTitleHtml('체중없음 (- kg · #999 · 믹스)', '', true, '5.2', 'p-weight');
+assert.match(manualWeightHtml, /placeholder="체중"/);
+assert.match(manualWeightHtml, /text-align:center/);
+assert.match(manualWeightHtml, /<span[^>]*>kg<\/span>/);
 assert.strictEqual(context.__test.breedOf({ breed: null }), '품종 미상');
 assert.strictEqual(context.__test.breedOf({ breed: { name: '푸들' } }), '푸들');
 

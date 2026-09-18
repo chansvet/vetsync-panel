@@ -447,6 +447,37 @@
     ...item.manualNeeded, values: item.manualValues || {},
   })) + MAN1 : '';
 
+  const recalculatePatient = (p) => {
+    if (!p) return;
+    const chartWeight = p.chartWeight ?? p.weight;
+    const manualWeight = readPatientWeight(p.pid);
+    const missingChartWeight = !/^\d+(?:\.\d+)? kg$/.test(chartWeight || '');
+    p.weight = missingChartWeight && Number(manualWeight) > 0 ? Number(manualWeight) + ' kg' : chartWeight;
+    p.chartWeight = chartWeight;
+    p.manualWeight = manualWeight;
+    p.manualWeightNeeded = missingChartWeight;
+    const sourceItems = Array.isArray(p.items) ? p.items : Object.values(p.items || {});
+    p.items = sourceItems.map((item) => {
+      const registered = typeof doseEngine !== 'undefined' && doseEngine.find(item.drug);
+      const values = readManual(p.pid, item.drug);
+      const weight = p.weight;
+      const instruction = item.dilution && item.dilution.valid === false ? '희석 확인 필요' :
+        (item.doseConflict ? '용량 불일치' : '');
+      const calculation = typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, weight,
+        instruction, {
+          written: values.dose && values.doseUnit ? values.dose + values.doseUnit : '',
+          concentration: values.concentration,
+          concentrationUnit: values.concentrationUnit,
+        }) : undefined;
+      return {
+        ...item, calculation, manualValues: values, patientWeight: weight, manualNeeded: {
+          dose: (!registered && !item.dose) || item.doseConflict,
+          concentration: !registered || !(registered.conc > 0),
+        },
+      };
+    });
+  };
+
   function makeSnapshot(rows) {
     const patients = {};
     rows.forEach((r) => {
@@ -471,34 +502,10 @@
       }
     });
     Object.values(patients).forEach((p) => {
-      const chartWeight = p.weight;
-      const manualWeight = readPatientWeight(p.pid);
-      const missingChartWeight = !/^\d+(?:\.\d+)? kg$/.test(chartWeight || '');
-      if (missingChartWeight && Number(manualWeight) > 0) p.weight = Number(manualWeight) + ' kg';
-      p.chartWeight = chartWeight;
-      p.manualWeight = manualWeight;
-      p.manualWeightNeeded = missingChartWeight;
-      p.items = Object.values(p.items).map((item) => {
-        const registered = typeof doseEngine !== 'undefined' && doseEngine.find(item.drug);
-        const values = readManual(p.pid, item.drug);
-        const missingWeight = !/^\d+(?:\.\d+)? kg$/.test(p.weight || '');
-        const weight = missingWeight && Number(values.weight) > 0 ? Number(values.weight) + ' kg' : p.weight;
-        const instruction = item.dilution && item.dilution.valid === false ? '희석 확인 필요' :
-          (item.doseConflict ? '용량 불일치' : '');
-        const calculation = typeof doseEngine !== 'undefined' ? doseEngine.calculate(item.drug, item.dose, weight,
-          instruction, {
-            written: values.dose && values.doseUnit ? values.dose + values.doseUnit : '',
-            concentration: values.concentration,
-            concentrationUnit: values.concentrationUnit,
-          }) : undefined;
-        return {
-          ...item, times: item.times.sort((a, b) => a.order - b.order), calculation, manualValues: values,
-          patientWeight: weight, manualNeeded: {
-            dose: (!registered && !item.dose) || item.doseConflict,
-            concentration: !registered || !(registered.conc > 0),
-          },
-        };
-      });
+      p.items = Object.values(p.items).map((item) => ({
+        ...item, times: item.times.sort((a, b) => a.order - b.order),
+      }));
+      recalculatePatient(p);
     });
     return { checkedAt: new Date().toISOString(), patients };
   }
@@ -744,6 +751,8 @@
     out.changeCount = g.changes;
     out.changeKinds = g.changeKinds;
     out.snapshot = snapshot;
+    out.previousSnapshot = previous;
+    out.states = states;
     out.baselineKey = baselineKey(date);
     out.firstCheck = firstCheck;
     return out;
@@ -832,9 +841,11 @@
     const meta = info.join(' · ');
     const weightChanged = previousWeight && previousWeight !== '- kg' && previousWeight !== weight;
     const weightHtml = manualWeightNeeded ?
-      '<input data-patient-weight data-pid="' + esc(pid) + '" type="number" inputmode="decimal" min="0" step="any" placeholder="체중 kg" aria-label="' +
-        esc(name) + ' 체중(kg)' + '" value="' + esc(manualWeight || '') + '" style="box-sizing:border-box;width:64px;height:27px;border:1px solid #94a3b8;border-radius:4px;' +
-        'background:#fff;color:#111827;padding:0 5px;font:700 13px/1 system-ui;vertical-align:middle">' : weightChanged ?
+      '<span style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle">' +
+        '<input data-patient-weight data-pid="' + esc(pid) + '" type="number" inputmode="decimal" min="0" step="any" placeholder="체중" aria-label="' +
+          esc(name) + ' 체중(kg)' + '" value="' + esc(manualWeight || '') + '" style="box-sizing:border-box;width:58px;height:27px;border:1px solid #94a3b8;border-radius:4px;' +
+          'background:#fff;color:#111827;padding:0 4px;text-align:center;font:700 13px/1 system-ui;vertical-align:middle">' +
+        '<span style="font-size:13px;color:#64748b;font-weight:700">kg</span></span>' : weightChanged ?
       '<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">' + esc(previousWeight) + '</span>→' +
         '<span style="color:#b45309;font-size:15px;font-weight:800">' + esc(weight) + '</span>' :
       '<span style="color:#111827;font-size:15px;font-weight:800">' + esc(weight) + '</span>';
@@ -914,6 +925,22 @@
     let text = '';
     let requestId = 0;
     let sortMode = 'name';
+    const refreshLocalInjectionPatient = (sections, pid) => {
+      if (!sections || !sections.snapshot || !sections.snapshot.patients || !sections.snapshot.patients[pid]) return false;
+      recalculatePatient(sections.snapshot.patients[pid]);
+      const compared = compareSnapshot(sections.snapshot, sections.previousSnapshot, sections.states || {});
+      sections[0].groups = compared.normal;
+      const conditionalIndex = sections.findIndex((section) => section.heading === '조건부');
+      if (compared.cond.length) {
+        if (conditionalIndex >= 0) sections[conditionalIndex].groups = compared.cond;
+        else sections.push({ heading: '조건부', groups: compared.cond });
+      } else if (conditionalIndex >= 0) {
+        sections.splice(conditionalIndex, 1);
+      }
+      sections.changeCount = compared.changes;
+      sections.changeKinds = compared.changeKinds;
+      return true;
+    };
     const paint = (id, sections) => {
       const body = box.querySelector('#vsp-body');
       if (!body) return;
@@ -954,7 +981,7 @@
           const value = Number(input.value);
           if (value > 0) manualPatientWeights.set(String(input.dataset.pid), String(value));
           else manualPatientWeights.delete(String(input.dataset.pid));
-          show('inj', false);
+          if (refreshLocalInjectionPatient(sections, String(input.dataset.pid))) paint('inj', sections);
         };
         input.addEventListener('change', applyWeight);
         input.addEventListener('blur', applyWeight);
