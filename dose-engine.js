@@ -28,7 +28,12 @@ const createDoseEngine = (drugs) => {
     if (dose.startsWith('.')) dose = '0' + dose;
     // Conflicting or additional dosing instructions must not silently use a default.
     if (/용량 불일치/.test(instruction) && !overrides.written) return fail('용량 불일치');
-    if (/\d\s*(?:mpk|mg|ml|mcg|ug|iu|cc)|희석|농도/i.test(instruction) && !overrides.written) return fail('용량 확인 필요');
+    const instructionWithoutDilution = String(instruction || '')
+      .replace(/\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*희석|\d+(?:\.\d+)?\s*배\s*희석/ig, ' ')
+      .trim();
+    if (/\d\s*(?:mpk|mg|ml|mcg|ug|iu|cc)|농도/i.test(instructionWithoutDilution) && !overrides.written) {
+      return fail('용량 확인 필요');
+    }
     if (/^\d+(?:\.\d+)?(?:ml|cc)$/.test(dose)) {
       const volume = parseFloat(dose);
       return volume > 0 ? { volume, text: volumeText(volume) + ' mL', basis: '차트 mL' } : fail('용량 확인 필요');

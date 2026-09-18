@@ -117,19 +117,22 @@ assert.equal(frequencyShift.patients.test.items.length, 1);
 assert.equal(frequencyShift.patients.test.items[0].dose, '2mpk');
 assert.deepEqual(JSON.parse(JSON.stringify(frequencyShift.patients.test.items[0].times.map((time) => time.frequency))), ['BID', 'SID']);
 assert.equal(engine.calculate('Unknown', '2mpk', '5 kg', '', { concentration: 10, concentrationUnit: 'mg' }).text, '1.00 mL');
+assert.equal(engine.calculate('enro', '', '7.69 kg', '1:1 희석').text, '1.54 mL');
+assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('enro 1:1 희석'))),
+  { drug: 'enro', dose: '', route: '', frequency: '', note: '' });
+const diluted = snapshot({ ...row('enro', '', 17, false, '7.69 kg'), dilution: { label: '1:1 희석', nsRatio: 1 } });
+const dilutedHtml = ctx.api.render([{ heading: '주사', groups: ctx.api.compareSnapshot(diluted, null, {}).normal }]);
+assert.match(dilutedHtml, /1\.54 mL \+ NS 1\.54 mL/);
+assert.match(dilutedHtml, /1:1 희석/);
 const manualSnapshot = snapshot({ ...row('Unknown', '2mpk'), weight: '- kg' });
 const manualHtml = ctx.api.render([{ heading: '수기 입력', groups: ctx.api.compareSnapshot(manualSnapshot, null, {}).normal }]);
-assert.match(manualHtml, /data-manual-box/);
-assert.match(manualHtml, /data-manual="weight"/);
-assert.match(manualHtml, /data-manual="concentration"/);
-assert.match(manualHtml, /몸무게 입력 안됨/);
-assert.match(manualHtml, /역가 입력 안됨/);
-assert.doesNotMatch(manualHtml, /value="10"/);
+assert.doesNotMatch(manualHtml, /data-manual-box|몸무게 입력 안됨|역가 입력 안됨/);
+assert.match(manualHtml, /font-size:13px;color:#b45309;font-weight:700/);
 console.log('2.0 계산·별칭·추가·제외·체중 변경 테스트 통과');
 if (process.argv.includes('--preview')) {
   const body = ctx.api.render([{ heading: 'VetSync 2.0 · 예시 환자', groups: diff.normal },
     { heading: '제외 변경 예시', groups: skip.normal }, { heading: '삭제 예시', groups: removed.normal },
-    { heading: '수기 입력 예시', groups: ctx.api.compareSnapshot(manualSnapshot, null, {}).normal }]);
+    { heading: '정보 부족 예시', groups: ctx.api.compareSnapshot(manualSnapshot, null, {}).normal }]);
   fs.writeFileSync('preview-v2.html', '<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<title>VetSync 2.0 예시</title><style>body{margin:0;padding:16px;font:15px/1.5 system-ui;background:#fff;color:#111827;overflow-wrap:anywhere}main{max-width:900px;margin:auto}</style><main>' + body + '</main></html>');
 }
