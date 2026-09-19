@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.1.15
+// @version      2.1.16
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -37,7 +37,8 @@
     ['Tranexamic acid', 'TXA', '트라넥삼산'], ['Dalteparin', 'dalte', 'datle'],
     ['G-CSF', 'g-csf', 'gcsf', '류코스팀'],
     ['Chlorpheniramine', 'chloropheniramine', 'chlorpeniramine', '클로르페니라민'],
-    ['Meloxicam', 'melo'], ['Meropenem', 'mero'],
+    ['Meloxicam', 'melo'], ['Meropenem', 'mero', '메로페넴'],
+    ['Furosemide', 'furo', '퓨로세마이드', '라식스'],
     ];
     const byAlias = new Map();
     aliases.forEach(([name, ...other]) => {
@@ -228,6 +229,13 @@
     "note": ""
     },
     {
+    "name": "Furosemide",
+    "dose": null,
+    "conc": 10,
+    "sc": false,
+    "note": ""
+    },
+    {
     "name": "Chlorpheniramine",
     "dose": 0.2,
     "conc": 2,
@@ -257,7 +265,7 @@
     const NOT_LAB = /혈압|항혈전|고혈압|이뇨|수혈|요배양|요검사|뇨검사|요카|초음파|방사선|조직검사|항감테|내복|아이스팩|음수|배뇨|배변|CRI|스푼|산소|O2\s*supply/i;
     const ELECTROLYTE = /전해질|가스|\bgas\b|\blyte\b/i;
     const HANDLING = /팔|앞다리|뒷다리|후지|전지|경정맥|채혈|지혈|각각|나비침|희석|냉장/;
-    const KNOWN = /SAM\s*\d|\bSAM\b|설밤|\bfamo\w*|파모|\bmaro\w*|세레니아|cerenia|\bmero\w*|\bmarbo\w*|마보|\benro\w*|\bcefa\w*|\bcepha\w*|cefotaxime|convenia|\bdalte\w*|\bdatle\w*|tramadol|트라마돌|\btra\s*\d|vit\.?\s?k|비타민k|\bmelo\w*|dexa\w*|덱사|ondansetron|\bondan\w*|온단세트론|파노퀠|calcium\s*gluconate|칼슘글루코네이트|칼슘글루콘산|\bfuro\w*|라식스|butor\w*|carprofen|tranexamic|\bTXA\b|amoxi\w*|clinda\w*|\bgent\w*|prednisolone|프레드|solu|atropine|glyco\w*|호의주|타우린|iron\s*dextran|hydroxocobalamin|cobalamin|G-?csf|\bDPO\b|romiplostim|로미플로스팀|프로롱갈|중탄산나트륨|esomeprazol\w*|eosmeprazol\w*|omeprazol\w*|오메프라졸|chlor\w*phenir\w*|클로르페니라민|\bleve\s*\d|levetiracetam|pheno\s*\d|phenobarbital|\bmeto\b/i;
+    const KNOWN = /SAM\s*\d|\bSAM\b|설밤|\bfamo\w*|파모|\bmaro\w*|세레니아|cerenia|\bmero\w*|메로페넴|\bmarbo\w*|마보|\benro\w*|\bcefa\w*|\bcepha\w*|cefotaxime|convenia|\bdalte\w*|\bdatle\w*|tramadol|트라마돌|\btra\s*\d|vit\.?\s?k|비타민k|\bmelo\w*|dexa\w*|덱사|ondansetron|\bondan\w*|온단세트론|파노퀠|calcium\s*gluconate|칼슘글루코네이트|칼슘글루콘산|\bfuro\w*|퓨로세마이드|라식스|butor\w*|carprofen|tranexamic|\bTXA\b|amoxi\w*|clinda\w*|\bgent\w*|prednisolone|프레드|solu|atropine|glyco\w*|호의주|타우린|iron\s*dextran|hydroxocobalamin|cobalamin|G-?csf|\bDPO\b|romiplostim|로미플로스팀|프로롱갈|중탄산나트륨|esomeprazol\w*|eosmeprazol\w*|omeprazol\w*|오메프라졸|chlor\w*phenir\w*|클로르페니라민|\bleve\s*\d|levetiracetam|pheno\s*\d|phenobarbital|\bmeto\b/i;
     const ROUTE = /(?:^|[^a-z])(iv|sc|im)(?![a-z])/i;
     const SKIP = /metro\s*\d|metronidazol\w*|\bmetro\b|메트로|후라시닐|인슐린|insulin|슐린|glargine|글라진|란투스|lantus|프로진크|\bPZI\b|vetsulin|humulin|휴물린|novolin|노보믹스|노보래피드|mannitol|만니톨|\bNAC\b|acetylcystein\w*|20%\s*dex|피하수액|\bPPN\b|\bTPN\b/i;
     const PROC = /medetomidine|dexmed|midazolam|미다졸람|local\s*injection|펫소좀|propofol|alfaxa|ketamine|zoletil|xylazine|럼푼|마취|vincristine|vinblastine|doxorubicin|cyclophosphamide|carboplatin|cisplatin|lomustine|chlorambucil|cytarabine|asparaginase|mitoxantrone|toceranib|빈크리스틴|독소루비신|항암/i;
@@ -500,7 +508,7 @@
     const m = s.match(re);
     if (m) { notes.push(m[0].replace(/[()]/g, '').trim()); s = s.replace(re, ' '); }
     };
-    pull(/\(([^)]*)\)/); pull(/\bfor\s+\d+\s*m(?:in)?\b/i); pull(/\d+\s*분(?:동안)?/);
+    pull(/\(([^)]*)\)/); pull(/\bfor\s+\d+\s*m(?:in)?\b/i); pull(/\d+\s*분(?:\s*(?:이상|동안|에\s*걸쳐))?/);
     pull(/\bbolus\b/i); pull(/\bslow(?:ly)?\b/i); pull(/\bsid\b|\bbid\b|\btid\b|\bqid\b|\bq\d+h\b/i);
     let route = '';
     const r = s.match(ROUTE);
@@ -1091,7 +1099,7 @@
     '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
     TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
     'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-    '<span style="flex:1"></span><span style="font-size:11px">2.1.15</span>' +
+    '<span style="flex:1"></span><span style="font-size:11px">2.1.16</span>' +
     '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
     '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';

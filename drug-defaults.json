@@ -122,6 +122,13 @@
     "note": ""
   },
   {
+    "name": "Furosemide",
+    "dose": null,
+    "conc": 10,
+    "sc": false,
+    "note": ""
+  },
+  {
     "name": "Chlorpheniramine",
     "dose": 0.2,
     "conc": 2,

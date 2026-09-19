@@ -18,6 +18,10 @@ assert.equal(engine.calculate('SAM', '', '5 kg', '30mpk').volume, null);
 assert.equal(engine.calculate('Dalteparin', '150IU/kg', '5 kg').text, '0.30 mL');
 assert.equal(engine.calculate('Dalteparin', '150mpk', '5 kg').volume, null);
 assert.equal(engine.find('류코스팀').name, 'G-CSF');
+assert.equal(engine.find('메로페넴').conc, 50);
+assert.equal(engine.find('퓨로세마이드').conc, 10);
+assert.equal(engine.find('라식스').conc, 10);
+assert.equal(engine.calculate('퓨로세마이드', '2mpk', '5 kg').text, '1.00 mL');
 assert.equal(engine.calculate('g-csf', '', '1 kg').text, '0.02 mL');
 assert.equal(engine.calculate('G-CSF', '5ug/kg', '4 kg').text, '0.08 mL');
 assert.equal(engine.calculate('G-CSF', '', '4 kg').basis, '5 µg/kg(기본) · 150 µg/0.6 mL');
@@ -48,6 +52,9 @@ assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('famo1'))),
   {drug:'famo',dose:'1',route:'',frequency:'',note:''});
 assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('Maropitant 1mpk IV PRN'))),
   {drug:'Maropitant',dose:'1mpk',route:'IV',frequency:'',note:''});
+assert.deepEqual(JSON.parse(JSON.stringify(ctx.api.parseDrug('메로페넴 8.5mpk iv 2분 이상'))),
+  {drug:'메로페넴',dose:'8.5mpk',route:'IV',frequency:'',note:'2분 이상'});
+assert.equal(engine.calculate('메로페넴', '8.5mpk', '27 kg').text, '4.59 mL');
 assert.equal(ctx.api.isInjection('H/S + Hepamerz 1amp + 호의주1A'), false);
 assert.equal(ctx.api.isInjection('FLK / 0.45N/S + vit B,C 1A, tau 5ml, meto 1.6ml'), false);
 assert.equal(ctx.api.isLabAtDraw({displayName:'간이혈당',cells:[{hourSlot:9,status:'PLANNED'}]}), true);

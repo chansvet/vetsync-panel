@@ -11,7 +11,8 @@ const createDoseEngine = (drugs) => {
     ['Tranexamic acid', 'TXA', '트라넥삼산'], ['Dalteparin', 'dalte', 'datle'],
     ['G-CSF', 'g-csf', 'gcsf', '류코스팀'],
     ['Chlorpheniramine', 'chloropheniramine', 'chlorpeniramine', '클로르페니라민'],
-    ['Meloxicam', 'melo'], ['Meropenem', 'mero'],
+    ['Meloxicam', 'melo'], ['Meropenem', 'mero', '메로페넴'],
+    ['Furosemide', 'furo', '퓨로세마이드', '라식스'],
   ];
   const byAlias = new Map();
   aliases.forEach(([name, ...other]) => {
