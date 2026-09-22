@@ -28,7 +28,7 @@ assert.equal(engine.calculate('G-CSF', '', '4 kg').basis, '5 µg/kg(기본) · 1
 assert.equal(engine.calculate('SAM', '0mpk', '5 kg').volume, null);
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")) +
-  'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,dilutionFrom,isInjection,pickInj,isLabAtDraw};})();';
+  'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,dilutionFrom,isInjection,pickInj,isLabAtDraw,noteOf};})();';
 const ctx = { doseEngine: engine };
 vm.runInNewContext(source, ctx);
 assert.equal(ctx.api.weightValue('오후 9시 퇴원'), '');
@@ -59,6 +59,18 @@ assert.equal(ctx.api.isInjection('H/S + Hepamerz 1amp + 호의주1A'), false);
 assert.equal(ctx.api.isInjection('FLK / 0.45N/S + vit B,C 1A, tau 5ml, meto 1.6ml'), false);
 assert.equal(ctx.api.isLabAtDraw({displayName:'간이혈당',cells:[{hourSlot:9,status:'PLANNED'}]}), true);
 assert.equal(ctx.api.isLabAtDraw({displayName:'간이혈당',cells:[{hourSlot:8,status:'PLANNED'}]}), false);
+assert.equal(ctx.api.noteOf({
+  displayName: '혈검 (CBC, CRP)', instructionText: '',
+  cells: [{hourSlot: 9, status: 'PLANNED', resultSlots: [{value: '지혈 오래'}]}],
+}), '지혈 오래');
+assert.equal(ctx.api.noteOf({
+  displayName: '혈검 (앞다리 채혈)', instructionText: '지혈 오래',
+  cells: [{hourSlot: 9, status: 'PLANNED', resultSlots: [{value: '지혈 오래'}, {value: '나비침 사용'}]}],
+}), '지혈 오래, 앞다리 채혈, 나비침 사용');
+assert.equal(ctx.api.noteOf({
+  displayName: '혈검 CBC', instructionText: '',
+  cells: [{hourSlot: 8, resultSlots: [{value: '8시 메모'}]}, {hourSlot: 9, resultSlots: [{value: '9시 메모'}]}],
+}), '9시 메모');
 assert.equal(ctx.api.doseFromInstruction('22mpk'), '22mpk');
 assert.equal(ctx.api.doseFromInstruction('용량: 22'), '22');
 assert.equal(ctx.api.doseFromInstruction('2번'), '');
