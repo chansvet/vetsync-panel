@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.1.17
+// @version      2.1.18
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -400,7 +400,7 @@
     const noteOf = (row) => {
     const notes = [];
     if (row.instructionText) notes.push(row.instructionText.trim());
-    const parts = String(row.displayName || '').split(/[,()[\]{}]/).map((s) => s.trim()).filter(Boolean);
+    const parts = String(row.displayName || '').split(/[,/()[\]{}]/).map((s) => s.trim()).filter(Boolean);
     notes.push(...parts.filter((p) => HANDLING.test(p)));
     (row.cells || [])
     .filter((cell) => cell.hourSlot === DRAW_HOUR)
@@ -410,6 +410,8 @@
     .forEach((value) => notes.push(value));
     return [...new Set(notes)].join(', ');
     };
+    const labNameOf = (row) => String(row.displayName || '').split(/\s*\/\s*/)
+    .map((part) => part.trim()).filter((part) => part && !HANDLING.test(part)).join(' / ');
     const breedOf = (patient = {}) => {
     const breed = patient.breedName || patient.breedLabel || patient.breedDisplayName ||
     patient.speciesBreed || patient.breed;
@@ -459,7 +461,7 @@
     cage: species + ' · ' + (chart.cageLabel || '미지정'),
     sortName: chart.patient.name,
     sortCage: chart.cageLabel || '미지정',
-    body: [labs.map((r) => r.displayName.trim()).join(' / ')],
+    body: [labs.map(labNameOf).filter(Boolean).join(' / ')],
     note: [labs.map(noteOf).filter(Boolean).join(' / '), temp ? '체온 ' + temp.v : ''].filter(Boolean).join(' / '),
     pid: chart.patient.patientId,
     needTemp: hasE && !temp,
@@ -1106,7 +1108,7 @@
     '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
     TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
     'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-    '<span style="flex:1"></span><span style="font-size:11px">2.1.17</span>' +
+    '<span style="flex:1"></span><span style="font-size:11px">2.1.18</span>' +
     '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
     '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
