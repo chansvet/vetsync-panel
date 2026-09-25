@@ -28,7 +28,7 @@ assert.equal(engine.calculate('G-CSF', '', '4 kg').basis, '5 µg/kg(기본) · 1
 assert.equal(engine.calculate('SAM', '0mpk', '5 kg').volume, null);
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")) +
-  'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,dilutionFrom,isInjection,pickInj,isLabAtDraw,noteOf,labNameOf};})();';
+  'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,dilutionFrom,isInjection,pickInj,isLabAtDraw,noteOf,labNameOf,flkValues,calculateFlk,ampuleNeeds};})();';
 const ctx = { doseEngine: engine };
 vm.runInNewContext(source, ctx);
 assert.equal(ctx.api.weightValue('오후 9시 퇴원'), '');
@@ -74,6 +74,22 @@ assert.equal(ctx.api.noteOf({
 assert.equal(ctx.api.labNameOf({displayName: '혈검 CBC/지혈 오래'}), '혈검 CBC');
 assert.equal(ctx.api.noteOf({displayName: '혈검 CBC/지혈 오래', cells: []}), '지혈 오래');
 assert.equal(ctx.api.labNameOf({displayName: '혈검 CBC/CRP'}), '혈검 CBC / CRP');
+const flkExample = ctx.api.flkValues(9.8, 48, 2);
+assert.equal(flkExample.duration, 24);
+assert.ok(Math.abs(flkExample.fentanyl - 9.408) < 1e-12);
+assert.ok(Math.abs(flkExample.loading - 0.392) < 1e-12);
+assert.ok(Math.abs(flkExample.fentanylTotal - 9.8) < 1e-12);
+assert.ok(Math.abs(flkExample.lidocaine - 17.64) < 1e-12);
+assert.ok(Math.abs(flkExample.ketamine - 0.7056) < 1e-12);
+assert.ok(Math.abs(flkExample.ns - 20.2464) < 1e-12);
+assert.equal(flkExample.valid, true);
+const flkAuto = ctx.api.calculateFlk(9.8);
+assert.equal(flkAuto.rate, 1.5);
+assert.equal(flkAuto.bag, 36);
+assert.equal(flkAuto.duration, 24);
+assert.ok(flkAuto.fentanylTotal < 10);
+assert.equal(ctx.api.calculateFlk(0), null);
+assert.equal(ctx.api.calculateFlk(50.1), null);
 assert.equal(ctx.api.doseFromInstruction('22mpk'), '22mpk');
 assert.equal(ctx.api.doseFromInstruction('용량: 22'), '22');
 assert.equal(ctx.api.doseFromInstruction('2번'), '');
@@ -119,6 +135,13 @@ const row = (drug, dose, hour = 17, cancelled = false, weight = '5 kg') => ({
   note: '', instruction: '', raw: drug,
 });
 const snapshot = (...rows) => ctx.api.makeSnapshot(rows);
+const ampules = ctx.api.ampuleNeeds(snapshot(
+  row('SAM', '', 17), row('SAM', '', 21), row('SAM', '', 1, true),
+  row('Famotidine', '1mpk', 17), row('Famotidine', '1mpk', 21),
+  {...row('Tramadol', '', 17), conditional: true},
+));
+assert.deepEqual(JSON.parse(JSON.stringify(ampules.map((item) => [item.drug, item.count, item.unresolved]))),
+  [['SAM', 1, 0], ['Famotidine', 1, 0]]);
 const nonDefaultFamo = snapshot(row('Famo', '0.8mpk'));
 const nonDefaultHtml = ctx.api.render([{ heading: '주사', groups: ctx.api.compareSnapshot(nonDefaultFamo, null, {}).normal }]);
 assert.match(nonDefaultHtml, /Famo.*17시.*IV/);

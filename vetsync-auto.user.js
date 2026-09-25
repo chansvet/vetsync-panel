@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.1.18
+// @version      2.2.0
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -296,6 +296,42 @@
     d.setDate(d.getDate() + n);
     return ymd(d);
     };
+    const FLK = {
+    fentanylRate: 0.002, fentanylConc: 0.05,
+    lidocaineRate: 1.5, lidocaineConc: 20,
+    ketamineRate: 0.15, ketamineConc: 50,
+    loadingDose: 0.002, loadingConc: 0.05,
+    };
+    const flkValues = (weight, bag, rate) => {
+    const duration = bag / rate;
+    const fentanyl = FLK.fentanylRate * weight * duration / FLK.fentanylConc;
+    const loading = FLK.loadingDose * weight / FLK.loadingConc;
+    const lidocaine = FLK.lidocaineRate * weight * duration / FLK.lidocaineConc;
+    const ketamine = FLK.ketamineRate * weight * duration / FLK.ketamineConc;
+    const total = fentanyl + lidocaine + ketamine;
+    const ns = bag - total;
+    const checks = {
+    rate: rate >= 1 && Math.abs(rate * 2 - Math.round(rate * 2)) < 1e-9,
+    bag: Number.isInteger(bag) && bag > 0 && bag <= 100,
+    fentanyl: fentanyl + loading < 10,
+    fit: total <= bag,
+    ns: ns >= 0,
+    };
+    return { weight, rate, bag, duration, fentanyl, loading, fentanylTotal: fentanyl + loading,
+    lidocaine, ketamine, total, ns, checks, valid: Object.values(checks).every(Boolean) };
+    };
+    const calculateFlk = (weight) => {
+    const value = Number(weight);
+    if (!(value > 0) || value > 50) return null;
+    for (let rate = 1; rate <= 100; rate += 0.5) {
+    if (rate + 1e-12 < 0.118 * value) continue;
+    for (let bag = 100; bag >= 1; bag -= 1) {
+    const result = flkValues(value, bag, rate);
+    if (result.valid) return result;
+    }
+    }
+    return null;
+    };
     const currentHospitalId = () => {
     try {
     const context = JSON.parse(localStorage.getItem('hospital-context') || 'null');
@@ -396,6 +432,22 @@
     if (weight !== '- kg') weights.set(String(chart.patient.patientId), weight);
     });
     return weights;
+    };
+    const flkPatients = async (date) => {
+    const { charts, details } = await collect(date);
+    const active = charts.map((chart, i) => ({ chart, detail: details[i] }))
+    .filter(({ chart, detail }) => admitted(chart, detail, date, new Date().getHours()));
+    const missing = active.filter(({ chart, detail }) => latestWeight(detail, chart) === '- kg')
+    .map(({ chart }) => String(chart.patient.patientId));
+    const previous = await yesterdayWeights(date, missing);
+    return active.map(({ chart, detail }) => ({
+    pid: String(chart.patient.patientId),
+    name: chart.patient.name,
+    code: chart.patient.hospitalPatientCode,
+    breed: breedOf(chart.patient),
+    cage: chart.cageLabel || '미지정',
+    weight: latestWeight(detail, chart) === '- kg' ? (previous.get(String(chart.patient.patientId)) || '') : latestWeight(detail, chart),
+    })).sort((a, b) => compareText(a.name, b.name));
     };
     const noteOf = (row) => {
     const notes = [];
@@ -716,6 +768,27 @@
     });
     return { checkedAt: new Date().toISOString(), patients };
     }
+    const AMPULE_SIZES = [
+    { drug: 'SAM', label: 'SAM', size: 5 },
+    { drug: 'Famotidine', label: 'Famotidine', size: 2 },
+    { drug: 'Vitamin K', label: 'Vit K', size: 1 },
+    { drug: 'Metoclopramide', label: 'Metoclopramide', size: 1 },
+    { drug: 'Tramadol', label: 'Tramadol', size: 1 },
+    ];
+    const ampuleNeeds = (snapshot) => AMPULE_SIZES.map((rule) => {
+    let volume = 0;
+    let unresolved = 0;
+    Object.values(snapshot?.patients || {}).forEach((patient) => {
+    (patient.items || []).forEach((item) => {
+    if (item.drug !== rule.drug || item.conditional) return;
+    const count = item.times.filter((time) => !time.cancelled).length;
+    if (!count) return;
+    if (item.calculation?.volume == null) unresolved += count;
+    else volume += item.calculation.volume * count;
+    });
+    });
+    return { ...rule, volume, count: volume > 0 ? Math.ceil(volume / rule.size - 1e-12) : 0, unresolved };
+    }).filter((item) => item.count || item.unresolved);
     const preparationItem = (item, prev = null, kind = '') => {
     const calc = item.calculation;
     const active = (x) => x.times.filter((t) => !t.cancelled);
@@ -1092,9 +1165,31 @@
     compareText(a.sortCage || a.cage, b.sortCage || b.cage) || byName;
     }),
     }));
+    const fixed = (value, digits = 3) => Number(value).toFixed(digits);
+    const flkText = (entries) => entries.map((entry) => {
+    const r = entry.result;
+    return entry.name + ' (' + r.weight + ' kg)\n' +
+    'Bag ' + r.bag + ' mL · 속도 ' + r.rate.toFixed(1) + ' mL/hr · ' + fixed(r.duration, 2) + ' hr\n' +
+    'F ' + fixed(r.fentanyl) + ' mL · L ' + fixed(r.lidocaine) + ' mL · K ' + fixed(r.ketamine) + ' mL · NS ' + fixed(r.ns) + ' mL\n' +
+    'F loading ' + fixed(r.loading) + ' mL · F 총 ' + fixed(r.fentanylTotal) + ' mL · FLK 총 ' + fixed(r.total) + ' mL · 제한조건 ' + (r.valid ? '충족' : '확인 필요');
+    }).join('\n\n');
+    const ampuleText = (items) => items.map((item) => item.label + ' ' + fixed(item.volume, 2) + ' mL → ' + item.count + '병' +
+    (item.unresolved ? ' · 계산 불가 ' + item.unresolved + '회' : '')).join(' · ');
+    const ampuleHtml = (snapshot) => {
+    const items = ampuleNeeds(snapshot);
+    if (!items.length) return '';
+    return '<section style="margin:10px 0 4px;padding:10px 12px;border:1px solid #cbd5e1;border-left:3px solid #0f766e;border-radius:4px;background:#f8fafc">' +
+    '<div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:5px">필요 약물 · 취소/PRN 제외</div>' +
+    '<div style="display:flex;gap:6px 12px;flex-wrap:wrap">' + items.map((item) =>
+    '<span style="white-space:nowrap"><strong>' + esc(item.label) + ' ' + item.count + '병</strong>' +
+    '<span style="font-size:12px;color:#64748b"> (' + fixed(item.volume, 2) + '/' + item.size + ' mL)</span>' +
+    (item.unresolved ? '<span style="font-size:12px;color:#b45309;font-weight:700"> · ' + item.unresolved + '회 확인</span>' : '') + '</span>').join('') +
+    '</div></section>';
+    };
     const TABS = [
     { id: 'blood', label: '채혈', run: bloodwork },
     { id: 'inj', label: '주사', run: injections },
+    { id: 'flk', label: 'FLK', run: flkPatients },
     ];
     function open() {
     const old = document.getElementById('vsp');
@@ -1105,10 +1200,10 @@
     'font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;overflow:auto;' +
     '-webkit-overflow-scrolling:touch;padding:0 0 40px;font-variant-numeric:tabular-nums');
     box.innerHTML =
-    '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 14px;display:flex;align-items:center;gap:8px">' +
+    '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
     'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-    '<span style="flex:1"></span><span style="font-size:11px">2.1.18</span>' +
+    '<span style="flex:1"></span><span style="font-size:11px">2.2.0</span>' +
     '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
     '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1116,6 +1211,7 @@
     let text = '';
     let requestId = 0;
     let sortMode = 'name';
+    const flkEntries = [];
     const refreshLocalInjectionPatient = (sections, pid) => {
     if (!sections || !sections.snapshot || !sections.snapshot.patients || !sections.snapshot.patients[pid]) return false;
     recalculatePatient(sections.snapshot.patients[pid]);
@@ -1132,11 +1228,62 @@
     sections.changeKinds = compared.changeKinds;
     return true;
     };
+    const paintFlk = (patients) => {
+    const body = box.querySelector('#vsp-body');
+    if (!body) return;
+    text = flkText(flkEntries);
+    const options = ['<option value="">입원환자 선택</option>'].concat(patients.map((patient, index) =>
+    '<option value="' + index + '">' + esc(patient.name + ' · ' + patient.cage +
+    (patient.weight ? ' · ' + patient.weight : ' · 체중 미입력')) + '</option>')).join('');
+    const results = flkEntries.length ? flkEntries.map((entry, index) => {
+    const r = entry.result;
+    return '<article style="padding:11px 0 12px;border-bottom:2px solid #94a3b8">' +
+    '<div style="display:flex;align-items:center;gap:8px"><strong style="font-size:16px">' + esc(entry.name) +
+    ' <span style="font-size:14px;color:#64748b">(' + r.weight + ' kg)</span></strong><span style="flex:1"></span>' +
+    '<button data-flk-remove="' + index + '" aria-label="' + esc(entry.name) + ' 삭제" title="삭제" style="width:44px;height:44px;border:0;background:#fff;color:#64748b;font-size:22px">×</button></div>' +
+    '<div style="margin-top:3px;font-size:15px;font-weight:700;line-height:1.55">Bag ' + r.bag + ' mL · F ' + fixed(r.fentanyl) +
+    ' mL · L ' + fixed(r.lidocaine) + ' mL · K ' + fixed(r.ketamine) + ' mL · NS ' + fixed(r.ns) + ' mL</div>' +
+    '<div style="font-size:14px;line-height:1.55">F loading ' + fixed(r.loading) + ' mL · ' +
+    '<strong style="color:#0f766e;font-size:16px">' + r.rate.toFixed(1) + ' mL/hr</strong> · ' + fixed(r.duration, 2) + ' hr</div>' +
+    '<div style="font-size:12px;color:#64748b">F+loading ' + fixed(r.fentanylTotal) + ' mL · FLK 합계 ' + fixed(r.total) +
+    ' mL · <strong style="color:' + (r.valid ? '#166534' : '#b42318') + '">제한조건 ' + (r.valid ? '충족' : '확인 필요') + '</strong></div></article>';
+    }).join('') : '<p style="color:#64748b;margin-top:18px">환자를 선택하거나 이름과 체중을 입력해 추가하세요.</p>';
+    body.innerHTML = '<section style="margin:0 -16px;padding:12px 16px;border-bottom:1px solid #cbd5e1;background:#f8fafc">' +
+    '<label for="vsp-flk-patient" style="display:block;font-size:12px;font-weight:800;color:#475569;margin-bottom:4px">입원환자 불러오기</label>' +
+    '<select id="vsp-flk-patient" style="box-sizing:border-box;width:100%;height:44px;border:1px solid #94a3b8;border-radius:5px;background:#fff;padding:0 9px;font:inherit">' + options + '</select>' +
+    '<div style="display:grid;grid-template-columns:minmax(0,1fr) 92px 64px;gap:8px;margin-top:8px">' +
+    '<label style="font-size:11px;font-weight:700;color:#64748b">환자 이름<input id="vsp-flk-name" autocomplete="off" style="box-sizing:border-box;width:100%;height:44px;margin-top:2px;border:1px solid #94a3b8;border-radius:5px;padding:0 9px;font:inherit" /></label>' +
+    '<label style="font-size:11px;font-weight:700;color:#64748b">체중 kg<input id="vsp-flk-weight" inputmode="decimal" style="box-sizing:border-box;width:100%;height:44px;margin-top:2px;border:1px solid #94a3b8;border-radius:5px;padding:0 6px;text-align:center;font:inherit" /></label>' +
+    '<button id="vsp-flk-add" style="align-self:end;height:44px;border:0;border-radius:5px;background:#0f766e;color:#fff;font:inherit;font-weight:800">추가</button></div>' +
+    '<div id="vsp-flk-error" role="alert" style="min-height:18px;margin-top:3px;font-size:12px;font-weight:700;color:#b42318"></div></section>' + results;
+    const select = body.querySelector('#vsp-flk-patient');
+    const nameInput = body.querySelector('#vsp-flk-name');
+    const weightInput = body.querySelector('#vsp-flk-weight');
+    const error = body.querySelector('#vsp-flk-error');
+    select.onchange = () => {
+    const patient = select.value === '' ? null : patients[Number(select.value)];
+    nameInput.value = patient?.name || '';
+    weightInput.value = patient?.weight ? patient.weight.replace(/\s*kg$/i, '') : '';
+    error.textContent = patient && !patient.weight ? '체중을 직접 입력하세요.' : '';
+    };
+    body.querySelector('#vsp-flk-add').onclick = () => {
+    const name = nameInput.value.trim();
+    const weight = Number(weightInput.value);
+    const result = calculateFlk(weight);
+    if (!name) { error.textContent = '환자 이름을 입력하세요.'; nameInput.focus(); return; }
+    if (!result) { error.textContent = '체중은 0보다 크고 50 kg 이하여야 합니다.'; weightInput.focus(); return; }
+    flkEntries.push({ name, result });
+    paintFlk(patients);
+    };
+    body.querySelectorAll('[data-flk-remove]').forEach((button) => {
+    button.onclick = () => { flkEntries.splice(Number(button.dataset.flkRemove), 1); paintFlk(patients); };
+    });
+    };
     const paint = (id, sections) => {
     const body = box.querySelector('#vsp-body');
     if (!body) return;
     const ordered = sortSections(sections, sortMode);
-    text = asText(ordered);
+    text = (id === 'inj' && sections.snapshot ? ampuleText(ampuleNeeds(sections.snapshot)) + '\n\n' : '') + asText(ordered);
     const sortControl =
     '<div style="margin:0 -16px;padding:9px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px">' +
     '<strong style="font-size:13px;color:#4b5563">정렬</strong>' +
@@ -1156,7 +1303,7 @@
     '<div style="margin:0 -16px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
     '<strong style="color:#92400e">[변경] ' + sections.changeCount + '명</strong><span style="flex:1"></span>' +
     '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #0f766e;border-radius:6px;background:#fff;color:#0f766e">변경 확인</button></div>' : '';
-    body.innerHTML = sortControl + refresh + firstCheck + changes + render(ordered, id);
+    body.innerHTML = sortControl + refresh + firstCheck + changes + (id === 'inj' ? ampuleHtml(sections.snapshot) : '') + render(ordered, id);
     body.querySelectorAll('[data-sort]').forEach((button) => {
     button.onclick = () => { sortMode = button.dataset.sort; paint(id, sections); };
     });
@@ -1223,7 +1370,8 @@
     try {
     const sections = await TABS.find((t) => t.id === id).run(ymd(new Date()), force);
     if (currentRequest !== requestId || !box.isConnected) return;
-    paint(id, sections);
+    if (id === 'flk') paintFlk(sections);
+    else paint(id, sections);
     } catch (e) {
     if (currentRequest !== requestId || !box.isConnected) return;
     text = '';
