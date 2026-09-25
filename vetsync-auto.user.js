@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.2.0
+// @version      2.2.1
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -1169,9 +1169,14 @@
     const flkText = (entries) => entries.map((entry) => {
     const r = entry.result;
     return entry.name + ' (' + r.weight + ' kg)\n' +
-    'Bag ' + r.bag + ' mL · 속도 ' + r.rate.toFixed(1) + ' mL/hr · ' + fixed(r.duration, 2) + ' hr\n' +
-    'F ' + fixed(r.fentanyl) + ' mL · L ' + fixed(r.lidocaine) + ' mL · K ' + fixed(r.ketamine) + ' mL · NS ' + fixed(r.ns) + ' mL\n' +
-    'F loading ' + fixed(r.loading) + ' mL · F 총 ' + fixed(r.fentanylTotal) + ' mL · FLK 총 ' + fixed(r.total) + ' mL · 제한조건 ' + (r.valid ? '충족' : '확인 필요');
+    'IV bag ' + r.bag + ' mL\n' +
+    'Fentanyl CRI ' + fixed(r.fentanyl) + ' mL\n' +
+    'Lidocaine ' + fixed(r.lidocaine) + ' mL\n' +
+    'Ketamine ' + fixed(r.ketamine) + ' mL\n' +
+    'NS ' + fixed(r.ns) + ' mL\n' +
+    'Fentanyl loading ' + fixed(r.loading) + ' mL\n' +
+    '속도 ' + r.rate.toFixed(1) + ' mL/hr · 지속시간 ' + fixed(r.duration, 2) + ' hr\n' +
+    'F+loading ' + fixed(r.fentanylTotal) + ' mL · FLK 합계 ' + fixed(r.total) + ' mL · 제한조건 ' + (r.valid ? '충족' : '확인 필요');
     }).join('\n\n');
     const ampuleText = (items) => items.map((item) => item.label + ' ' + fixed(item.volume, 2) + ' mL → ' + item.count + '병' +
     (item.unresolved ? ' · 계산 불가 ' + item.unresolved + '회' : '')).join(' · ');
@@ -1203,7 +1208,7 @@
     '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
     'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-    '<span style="flex:1"></span><span style="font-size:11px">2.2.0</span>' +
+    '<span style="flex:1"></span><span style="font-size:11px">2.2.1</span>' +
     '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
     '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1237,25 +1242,30 @@
     (patient.weight ? ' · ' + patient.weight : ' · 체중 미입력')) + '</option>')).join('');
     const results = flkEntries.length ? flkEntries.map((entry, index) => {
     const r = entry.result;
+    const resultRow = (label, value, strong) => '<div style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:5px 0;border-bottom:1px solid #e2e8f0">' +
+    '<span style="font-size:14px;color:#475569">' + label + '</span><strong style="font-size:' + (strong ? '17px' : '15px') + ';color:' + (strong ? '#111827' : '#334155') + ';white-space:nowrap">' + value + '</strong></div>';
     return '<article style="padding:11px 0 12px;border-bottom:2px solid #94a3b8">' +
     '<div style="display:flex;align-items:center;gap:8px"><strong style="font-size:16px">' + esc(entry.name) +
     ' <span style="font-size:14px;color:#64748b">(' + r.weight + ' kg)</span></strong><span style="flex:1"></span>' +
     '<button data-flk-remove="' + index + '" aria-label="' + esc(entry.name) + ' 삭제" title="삭제" style="width:44px;height:44px;border:0;background:#fff;color:#64748b;font-size:22px">×</button></div>' +
-    '<div style="margin-top:3px;font-size:15px;font-weight:700;line-height:1.55">Bag ' + r.bag + ' mL · F ' + fixed(r.fentanyl) +
-    ' mL · L ' + fixed(r.lidocaine) + ' mL · K ' + fixed(r.ketamine) + ' mL · NS ' + fixed(r.ns) + ' mL</div>' +
-    '<div style="font-size:14px;line-height:1.55">F loading ' + fixed(r.loading) + ' mL · ' +
-    '<strong style="color:#0f766e;font-size:16px">' + r.rate.toFixed(1) + ' mL/hr</strong> · ' + fixed(r.duration, 2) + ' hr</div>' +
-    '<div style="font-size:12px;color:#64748b">F+loading ' + fixed(r.fentanylTotal) + ' mL · FLK 합계 ' + fixed(r.total) +
+    '<div style="margin-top:2px">' + resultRow('IV bag', r.bag + ' mL', true) +
+    resultRow('Fentanyl CRI', fixed(r.fentanyl) + ' mL') + resultRow('Lidocaine', fixed(r.lidocaine) + ' mL') +
+    resultRow('Ketamine', fixed(r.ketamine) + ' mL') + resultRow('NS', fixed(r.ns) + ' mL') +
+    resultRow('Fentanyl loading', fixed(r.loading) + ' mL') + '</div>' +
+    '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 3px"><span style="font-size:14px;color:#475569">속도</span>' +
+    '<strong style="color:#0f766e;font-size:18px">' + r.rate.toFixed(1) + ' mL/hr</strong><span style="color:#94a3b8">·</span>' +
+    '<span style="font-size:14px;color:#475569">지속시간 <strong style="color:#334155">' + fixed(r.duration, 2) + ' hr</strong></span></div>' +
+    '<div style="font-size:12px;line-height:1.5;color:#64748b">F+loading ' + fixed(r.fentanylTotal) + ' mL · FLK 합계 ' + fixed(r.total) +
     ' mL · <strong style="color:' + (r.valid ? '#166534' : '#b42318') + '">제한조건 ' + (r.valid ? '충족' : '확인 필요') + '</strong></div></article>';
     }).join('') : '<p style="color:#64748b;margin-top:18px">환자를 선택하거나 이름과 체중을 입력해 추가하세요.</p>';
     body.innerHTML = '<section style="margin:0 -16px;padding:12px 16px;border-bottom:1px solid #cbd5e1;background:#f8fafc">' +
-    '<label for="vsp-flk-patient" style="display:block;font-size:12px;font-weight:800;color:#475569;margin-bottom:4px">입원환자 불러오기</label>' +
-    '<select id="vsp-flk-patient" style="box-sizing:border-box;width:100%;height:44px;border:1px solid #94a3b8;border-radius:5px;background:#fff;padding:0 9px;font:inherit">' + options + '</select>' +
-    '<div style="display:grid;grid-template-columns:minmax(0,1fr) 92px 64px;gap:8px;margin-top:8px">' +
-    '<label style="font-size:11px;font-weight:700;color:#64748b">환자 이름<input id="vsp-flk-name" autocomplete="off" style="box-sizing:border-box;width:100%;height:44px;margin-top:2px;border:1px solid #94a3b8;border-radius:5px;padding:0 9px;font:inherit" /></label>' +
-    '<label style="font-size:11px;font-weight:700;color:#64748b">체중 kg<input id="vsp-flk-weight" inputmode="decimal" style="box-sizing:border-box;width:100%;height:44px;margin-top:2px;border:1px solid #94a3b8;border-radius:5px;padding:0 6px;text-align:center;font:inherit" /></label>' +
-    '<button id="vsp-flk-add" style="align-self:end;height:44px;border:0;border-radius:5px;background:#0f766e;color:#fff;font:inherit;font-weight:800">추가</button></div>' +
-    '<div id="vsp-flk-error" role="alert" style="min-height:18px;margin-top:3px;font-size:12px;font-weight:700;color:#b42318"></div></section>' + results;
+    '<div style="max-width:760px;margin:0 auto"><label for="vsp-flk-patient" style="display:block;font-size:13px;font-weight:800;color:#475569;margin-bottom:5px">입원환자 불러오기</label>' +
+    '<select id="vsp-flk-patient" style="box-sizing:border-box;width:100%;height:44px;border:1px solid #94a3b8;border-radius:5px;background:#fff;padding:0 10px;font:inherit;font-size:16px">' + options + '</select>' +
+    '<div style="display:grid;grid-template-columns:minmax(0,1fr) 92px 64px;gap:8px;margin-top:10px">' +
+    '<label style="font-size:13px;font-weight:700;color:#64748b">환자 이름<input id="vsp-flk-name" autocomplete="off" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 10px;font:inherit;font-size:16px" /></label>' +
+    '<label style="font-size:13px;font-weight:700;color:#64748b">체중 kg<input id="vsp-flk-weight" inputmode="decimal" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 6px;text-align:center;font:inherit;font-size:16px;font-weight:700" /></label>' +
+    '<button id="vsp-flk-add" style="align-self:end;height:44px;border:0;border-radius:5px;background:#0f766e;color:#fff;font:inherit;font-size:15px;font-weight:800">추가</button></div>' +
+    '<div id="vsp-flk-error" role="alert" style="min-height:18px;margin-top:3px;font-size:12px;font-weight:700;color:#b42318"></div></div></section>' + results;
     const select = body.querySelector('#vsp-flk-patient');
     const nameInput = body.querySelector('#vsp-flk-name');
     const weightInput = body.querySelector('#vsp-flk-weight');
