@@ -1144,15 +1144,14 @@ compareText(a.sortCage || a.cage, b.sortCage || b.cage) || byName;
 const fixed = (value, digits = 3) => Number(value).toFixed(digits);
 const flkText = (entries) => entries.map((entry) => {
 const r = entry.result;
-return entry.name + ' (' + r.weight + ' kg)\n' +
+return entry.name + ' (' + fixed(r.weight, 2) + ' kg)\n' +
 'IV bag ' + r.bag + ' mL\n' +
-'Fentanyl CRI ' + fixed(r.fentanyl) + ' mL\n' +
-'Lidocaine ' + fixed(r.lidocaine) + ' mL\n' +
-'Ketamine ' + fixed(r.ketamine) + ' mL\n' +
-'NS ' + fixed(r.ns) + ' mL\n' +
-'Fentanyl loading ' + fixed(r.loading) + ' mL\n' +
-'속도 ' + r.rate.toFixed(1) + ' mL/hr · 지속시간 ' + fixed(r.duration, 2) + ' hr\n' +
-'F+loading ' + fixed(r.fentanylTotal) + ' mL · FLK 합계 ' + fixed(r.total) + ' mL · 제한조건 ' + (r.valid ? '충족' : '확인 필요');
+'Fentanyl CRI ' + fixed(r.fentanyl, 2) + ' mL\n' +
+'Lidocaine ' + fixed(r.lidocaine, 2) + ' mL\n' +
+'Ketamine ' + fixed(r.ketamine, 2) + ' mL\n' +
+'NS ' + fixed(r.ns, 2) + ' mL\n' +
+'Fentanyl loading ' + fixed(r.loading, 2) + ' mL\n' +
+'속도 ' + r.rate.toFixed(2) + ' mL/hr';
 }).join('\n\n');
 const ampuleText = (items) => items.map((item) => item.label + ' ' + fixed(item.volume, 2) + ' mL → ' + item.count + '병' +
 (item.unresolved ? ' · 계산 불가 ' + item.unresolved + '회' : '')).join(' · ');
@@ -1184,7 +1183,7 @@ box.innerHTML =
 '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
 TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
 'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-'<span style="flex:1"></span><span style="font-size:11px">2.2.1</span>' +
+'<span style="flex:1"></span><span style="font-size:11px">2.2.2</span>' +
 '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
 '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1218,21 +1217,19 @@ const options = ['<option value="">입원환자 선택</option>'].concat(patient
 (patient.weight ? ' · ' + patient.weight : ' · 체중 미입력')) + '</option>')).join('');
 const results = flkEntries.length ? flkEntries.map((entry, index) => {
 const r = entry.result;
-const resultRow = (label, value, strong) => '<div style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:5px 0;border-bottom:1px solid #e2e8f0">' +
-'<span style="font-size:14px;color:#475569">' + label + '</span><strong style="font-size:' + (strong ? '17px' : '15px') + ';color:' + (strong ? '#111827' : '#334155') + ';white-space:nowrap">' + value + '</strong></div>';
+const resultRow = (label, value) => '<div style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:5px 0;border-bottom:1px solid #e2e8f0">' +
+'<span style="font-size:14px;color:#475569">' + label + '</span><strong style="font-size:15px;color:#334155;white-space:nowrap">' + value + '</strong></div>';
 return '<article style="padding:11px 0 12px;border-bottom:2px solid #94a3b8">' +
 '<div style="display:flex;align-items:center;gap:8px"><strong style="font-size:16px">' + esc(entry.name) +
-' <span style="font-size:14px;color:#64748b">(' + r.weight + ' kg)</span></strong><span style="flex:1"></span>' +
+' <span style="font-size:14px;color:#64748b">(' + fixed(r.weight, 2) + ' kg)</span></strong><span style="flex:1"></span>' +
 '<button data-flk-remove="' + index + '" aria-label="' + esc(entry.name) + ' 삭제" title="삭제" style="width:44px;height:44px;border:0;background:#fff;color:#64748b;font-size:22px">×</button></div>' +
-'<div style="margin-top:2px">' + resultRow('IV bag', r.bag + ' mL', true) +
-resultRow('Fentanyl CRI', fixed(r.fentanyl) + ' mL') + resultRow('Lidocaine', fixed(r.lidocaine) + ' mL') +
-resultRow('Ketamine', fixed(r.ketamine) + ' mL') + resultRow('NS', fixed(r.ns) + ' mL') +
-resultRow('Fentanyl loading', fixed(r.loading) + ' mL') + '</div>' +
+'<div style="margin-top:2px"><div style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:8px;background:#f1f5f9;border-bottom:2px solid #94a3b8">' +
+'<strong style="font-size:15px;color:#334155">IV bag</strong><strong style="font-size:18px;color:#111827;white-space:nowrap">' + r.bag + ' mL</strong></div>' +
+resultRow('Fentanyl CRI', fixed(r.fentanyl, 2) + ' mL') + resultRow('Lidocaine', fixed(r.lidocaine, 2) + ' mL') +
+resultRow('Ketamine', fixed(r.ketamine, 2) + ' mL') + resultRow('NS', fixed(r.ns, 2) + ' mL') +
+resultRow('Fentanyl loading', fixed(r.loading, 2) + ' mL') + '</div>' +
 '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 3px"><span style="font-size:14px;color:#475569">속도</span>' +
-'<strong style="color:#0f766e;font-size:18px">' + r.rate.toFixed(1) + ' mL/hr</strong><span style="color:#94a3b8">·</span>' +
-'<span style="font-size:14px;color:#475569">지속시간 <strong style="color:#334155">' + fixed(r.duration, 2) + ' hr</strong></span></div>' +
-'<div style="font-size:12px;line-height:1.5;color:#64748b">F+loading ' + fixed(r.fentanylTotal) + ' mL · FLK 합계 ' + fixed(r.total) +
-' mL · <strong style="color:' + (r.valid ? '#166534' : '#b42318') + '">제한조건 ' + (r.valid ? '충족' : '확인 필요') + '</strong></div></article>';
+'<strong style="color:#0f766e;font-size:18px">' + r.rate.toFixed(2) + ' mL/hr</strong></div></article>';
 }).join('') : '<p style="color:#64748b;margin-top:18px">환자를 선택하거나 이름과 체중을 입력해 추가하세요.</p>';
 body.innerHTML = '<section style="margin:0 -16px;padding:12px 16px;border-bottom:1px solid #cbd5e1;background:#f8fafc">' +
 '<div style="max-width:760px;margin:0 auto"><label for="vsp-flk-patient" style="display:block;font-size:13px;font-weight:800;color:#475569;margin-bottom:5px">입원환자 불러오기</label>' +
