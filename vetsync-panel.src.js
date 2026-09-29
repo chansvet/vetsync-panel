@@ -38,6 +38,7 @@
   // ---- 주사 규칙 ----
   const KNOWN = /SAM\s*\d|\bSAM\b|설밤|\bfamo\w*|파모|\bmaro\w*|세레니아|cerenia|\bmero\w*|메로페넴|\bmarbo\w*|마보|\benro\w*|\bcefa\w*|\bcepha\w*|cefotaxime|convenia|\bdalte\w*|\bdatle\w*|tramadol|트라마돌|\btra\s*\d|vit\.?\s?k|비타민k|\bmelo\w*|dexa\w*|덱사|ondansetron|\bondan\w*|온단세트론|파노퀠|calcium\s*gluconate|칼슘글루코네이트|칼슘글루콘산|\bfuro\w*|퓨로세마이드|라식스|butor\w*|carprofen|tranexamic|\bTXA\b|amoxi\w*|clinda\w*|\bgent\w*|prednisolone|프레드|solu|atropine|glyco\w*|호의주|타우린|iron\s*dextran|hydroxocobalamin|cobalamin|G-?csf|\bDPO\b|romiplostim|로미플로스팀|프로롱갈|중탄산나트륨|esomeprazol\w*|eosmeprazol\w*|omeprazol\w*|오메프라졸|chlor\w*phenir\w*|클로르페니라민|\bleve\s*\d|levetiracetam|pheno\s*\d|phenobarbital|\bmeto\b/i;
   const HYDROXOCOBALAMIN = /hydro(?:xo)?cobalamin|\bcobalamin\b|\bB12\b|비타민\s*B12/i;
+  const LEVETIRACETAM = /\bleve(?:tiracetam)?\b/i;
   const ROUTE = /(?:^|[^a-z])(iv|sc|im)(?![a-z])/i;
   const SKIP = /metro\s*\d|metronidazol\w*|\bmetro\b|메트로|후라시닐|인슐린|insulin|슐린|glargine|글라진|란투스|lantus|프로진크|\bPZI\b|vetsulin|humulin|휴물린|novolin|노보믹스|노보래피드|mannitol|만니톨|\bNAC\b|acetylcystein\w*|20%\s*dex|피하수액|\bPPN\b|\bTPN\b/i;
   const PROC = /medetomidine|dexmed|midazolam|미다졸람|local\s*injection|펫소좀|propofol|alfaxa|ketamine|zoletil|xylazine|럼푼|마취|vincristine|vinblastine|doxorubicin|cyclophosphamide|carboplatin|cisplatin|lomustine|chlorambucil|cytarabine|asparaginase|mitoxantrone|toceranib|빈크리스틴|독소루비신|항암/i;
@@ -339,7 +340,7 @@
     if (!n || NONAME.test(n)) return false;
     if (FLUID_ORDER.test(n)) return false;
     if (SKIP.test(n) || PROC.test(n) || CRI.test(n) || EYE.test(n) || NOTINJ.test(n) || ORAL.test(n)) return false;
-    return ROUTE.test(n) || KNOWN.test(n) || HYDROXOCOBALAMIN.test(n) || /vitamin\s*k/i.test(n);
+    return ROUTE.test(n) || KNOWN.test(n) || HYDROXOCOBALAMIN.test(n) || LEVETIRACETAM.test(n) || /vitamin\s*k/i.test(n);
   };
 
   const frequencyFrom = (text) => {
@@ -372,7 +373,7 @@
     const r = s.match(ROUTE);
     if (r) { route = r[1].toUpperCase(); s = s.replace(ROUTE, ' '); }
     let dose = '';
-    const d = s.match(/(\d+(?:\.\d+)?|\.\d+)\s*(mpk|gpk|mg\s*\/\s*kg|mg\s*\/\s*dog|mg\s*\/\s*cat|ml\s*\/\s*kg|ug\s*\/\s*kg|mcg\s*\/\s*kg|ug\s*\/\s*cat|IU\s*\/\s*kg|U\s*\/\s*kg|units?|칸|ml|mg|cc|amp)\b/i);
+    const d = s.match(/(\d+(?:\.\d+)?|\.\d+)\s*(mpk|gpk|mg\s*\/\s*kg|mg\s*\/\s*dog|mg\s*\/\s*cat|ml\s*\/\s*kg|ug\s*\/\s*kg|mcg\s*\/\s*kg|ug\s*\/\s*cat|mcg\s*\/\s*cat|IU\s*\/\s*kg|U\s*\/\s*kg|units?|칸|ml|mg|cc|amp)\b/i);
     if (d) { dose = d[0].replace(/\s+/g, ''); s = s.replace(d[0], ' '); }
     else {
       const b = s.match(/(?:^|\s)(\d+(?:\.\d+)?|\.\d+)(?=\s|$)/);
@@ -388,7 +389,7 @@
     const value = String(text || '').trim();
     if (!value) return '';
     const parsed = parseDrug(value).dose;
-    if (/(?:mpk|gpk|mg\/kg|mg\/dog|mg\/cat|ml\/kg|ug\/kg|mcg\/kg|iu\/kg|u\/kg|ml|mg|cc|amp)$/i.test(parsed)) return parsed;
+    if (/(?:mpk|gpk|mg\/kg|mg\/dog|mg\/cat|ml\/kg|ug\/kg|mcg\/kg|ug\/cat|mcg\/cat|iu\/kg|u\/kg|ml|mg|cc|amp)$/i.test(parsed)) return parsed;
     const bare = value.match(/^(?:복용약|dose|용량)?\s*[:：]?\s*\(?((?:\d+(?:\.\d+)?|\.\d+))\)?$/i);
     return bare ? bare[1] : '';
   };
@@ -430,7 +431,7 @@
   const splitDrugs = (name) => {
     if (!name.includes(',') && !/\s+\/\s+/.test(name)) return [name];
     const parts = name.split(/,\s*|\s+\/\s+/).map((s) => s.trim()).filter(Boolean);
-    return parts.length > 1 && parts.every((p) => ROUTE.test(p) || KNOWN.test(p) || HYDROXOCOBALAMIN.test(p)) ? parts : [name];
+    return parts.length > 1 && parts.every((p) => ROUTE.test(p) || KNOWN.test(p) || HYDROXOCOBALAMIN.test(p) || LEVETIRACETAM.test(p)) ? parts : [name];
   };
 
   function pickInj(chart, detail, date, hours, tag, includeCancelled = true, selectedWeight = '') {
@@ -536,7 +537,7 @@
         }) : undefined;
       return {
         ...item, calculation, manualValues: values, patientWeight: weight, manualNeeded: {
-          dose: (!registered && !item.dose) || item.doseConflict,
+          dose: (!item.dose && (!registered || !(registered.dose > 0))) || item.doseConflict,
           concentration: !registered || !(registered.conc > 0),
         },
       };
@@ -882,12 +883,13 @@
       '" autocomplete="off" style="height:28px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#334155;' +
       'padding:0 3px;font:600 12px/1 system-ui">' + options.map((o) =>
         '<option value="' + o[0] + '"' + (value === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
-    const doseUnit = v.doseUnit || (/\b(?:ug|mcg)\s*\/\s*kg\b/i.test(data.written || '') ? 'ug/kg' : 'mpk');
+    const doseUnit = v.doseUnit || (/\b(?:ug|mcg)\s*\/\s*cat\b/i.test(data.written || '') ? 'ug/cat' :
+      /\b(?:ug|mcg)\s*\/\s*kg\b/i.test(data.written || '') ? 'ug/kg' : 'mpk');
     const concentrationUnit = v.concentrationUnit || 'mg';
     const fields = [];
     if (data.dose) {
       fields.push(input('dose', v.dose, '용량', '약물 용량'));
-      fields.push(select('doseUnit', doseUnit, [['mpk', 'mg/kg'], ['ug/kg', 'µg/kg'], ['ml/kg', 'mL/kg'], ['mg', 'mg/환자']], '용량 단위'));
+      fields.push(select('doseUnit', doseUnit, [['mpk', 'mg/kg'], ['ug/kg', 'µg/kg'], ['ug/cat', 'µg/cat'], ['ml/kg', 'mL/kg'], ['mg', 'mg/환자']], '용량 단위'));
     }
     if (data.concentration) {
       fields.push(input('concentration', v.concentration, '역가', '역가'));
@@ -1011,7 +1013,7 @@
   }));
 
   const fixed = (value, digits = 3) => Number(value).toFixed(digits);
-  const flkText = (entries, includeLoading = true) => entries.map((entry) => {
+  const flkText = (entries) => entries.map((entry) => {
     const r = entry.result;
     return entry.name + ' (' + fixed(r.weight, 2) + ' kg)\n' +
       'IV bag ' + r.bag + ' mL\n' +
@@ -1019,7 +1021,7 @@
       'Lidocaine ' + fixed(r.lidocaine, 2) + ' mL\n' +
       'Ketamine ' + fixed(r.ketamine, 2) + ' mL\n' +
       'NS ' + fixed(r.ns, 2) + ' mL\n' +
-      (includeLoading ? 'Fentanyl loading ' + fixed(r.loading, 2) + ' mL\n' : '로딩 제외\n') +
+      (entry.includeLoading ? 'Fentanyl loading ' + fixed(r.loading, 2) + ' mL\n' : '로딩 제외\n') +
       '속도 ' + r.rate.toFixed(2) + ' mL/hr';
   }).join('\n\n');
   const ampuleText = (items) => items.map((item) => item.label + ' ' + fixed(item.volume, 2) + ' mL → ' + item.count + '병' +
@@ -1068,7 +1070,7 @@
       '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
       '<span class="vsp-brand">VETSYNC</span>' +
       '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-      '<span class="vsp-header-spacer"></span><span class="vsp-version">2.2.4</span>' +
+      '<span class="vsp-header-spacer"></span><span class="vsp-version">2.2.5</span>' +
       '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
       '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
       '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1114,11 +1116,12 @@
       #vsp .vsp-changebar{padding:10px 12px!important;border:1px solid #e5d5b8!important;background:#fff8eb!important}
       #vsp #vsp-accept{min-height:40px;padding:7px 12px!important;border-color:#91aa9d!important;border-radius:5px!important;color:#315f51}
       #vsp .vsp-flk-form{margin:0 0 16px!important;padding:15px!important;border:1px solid #d5dfda!important;border-radius:6px!important;background:#fff!important;box-shadow:0 2px 8px rgba(27,57,48,.05)}
-      #vsp .vsp-flk-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:14px;margin-bottom:12px}
-      #vsp .vsp-flk-patient-picker{display:grid;gap:5px;min-width:0;color:#52635d;font-size:12px;font-weight:750}
+      #vsp .vsp-flk-patient-picker{display:grid;gap:5px;min-width:0;margin-bottom:12px;color:#52635d;font-size:12px;font-weight:750}
       #vsp .vsp-flk-patient-picker select{width:100%;height:44px;padding:0 11px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#172522;font-size:16px}
-      #vsp .vsp-flk-loading-check{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;border:1px solid #d5dfda;border-radius:5px;background:#f7f9f8;color:#364a43;font-size:14px;font-weight:700;white-space:nowrap;cursor:pointer}
-      #vsp .vsp-flk-loading-check input{width:18px;height:18px;margin:0;accent-color:#416e60}
+      #vsp .vsp-flk-loading-check{display:flex;align-items:center;gap:7px;min-height:34px;padding:4px 8px;border:1px solid #d5dfda;border-radius:5px;background:#fff;color:#364a43;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer}
+      #vsp .vsp-flk-loading-check input{appearance:none;-webkit-appearance:none;position:relative;display:inline-grid;place-content:center;width:19px;height:19px;flex:none;margin:0;border:1px solid #a9b8b0;border-radius:4px;background:#fff!important;cursor:pointer}
+      #vsp .vsp-flk-loading-check input:checked{border-color:#557968!important;background:#fff!important}
+      #vsp .vsp-flk-loading-check input:checked:after{content:"";display:block;width:5px;height:9px;margin-top:-2px;border:solid #315f51;border-width:0 2px 2px 0;transform:rotate(45deg)}
       #vsp .vsp-flk-entry-row{display:grid;grid-template-columns:minmax(0,1fr) 92px 68px;align-items:end;gap:9px}
       #vsp .vsp-flk-entry-row label{color:#52635d;font-size:12px;font-weight:750}
       #vsp .vsp-flk-entry-row input{display:block;width:100%;height:44px;margin-top:5px;padding:0 10px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#172522;font-size:16px}
@@ -1128,6 +1131,7 @@
       #vsp #vsp-flk-error{min-height:0!important;margin-top:7px!important;color:#9b3d32!important}
       #vsp .vsp-flk-result{margin:0;padding:12px 2px 14px;border-bottom:1px solid #cbd7d1}
       #vsp .vsp-flk-result-title{display:flex;align-items:center;gap:8px;min-height:42px;color:#172522}
+      #vsp .vsp-flk-title-spacer{flex:1;min-width:2px}
       #vsp .vsp-flk-bag{margin-top:4px;padding:9px 11px!important;border:1px solid #d9e2de;border-radius:5px;background:#eaf0ed!important}
       #vsp .vsp-flk-value-row{padding:6px 3px!important;border-color:#e2e9e6!important}
       #vsp .vsp-flk-value-row strong{color:#33443e!important;font-size:15px!important}
@@ -1141,17 +1145,14 @@
         #vsp .vsp-version{font-size:10px}
         #vsp .vsp-body{padding-left:12px!important;padding-right:12px!important}
         #vsp .vsp-flk-form{padding:11px!important}
-        #vsp .vsp-flk-controls{grid-template-columns:minmax(0,1fr) auto;gap:8px}
-        #vsp .vsp-flk-loading-check{gap:6px;padding:0 8px;font-size:13px}
         #vsp .vsp-flk-entry-row{grid-template-columns:minmax(0,1fr) 76px 60px;gap:6px}
         #vsp .vsp-patient{padding-left:9px!important;padding-right:8px!important}
       }
       @media(max-width:360px){
-        #vsp .vsp-flk-controls{grid-template-columns:minmax(0,1fr)}
-        #vsp .vsp-flk-loading-check{justify-self:start;min-height:38px}
         #vsp .vsp-flk-entry-row{grid-template-columns:minmax(0,1fr) 72px}
         #vsp #vsp-flk-add{grid-column:1/-1;width:100%}
       }
+      @media(max-width:420px){#vsp .vsp-flk-title-spacer{display:none}}
     `;
     box.appendChild(panelStyle);
     let text = '';
@@ -1164,18 +1165,21 @@
       const saved = JSON.parse(localStorage.getItem(flkStateKey) || 'null');
       if (saved?.date === todayKey) savedFlkState = saved;
     } catch (_) { /* 저장값이 손상되어도 FLK를 새로 쓸 수 있다. */ }
-    let flkIncludeLoading = savedFlkState?.includeLoading !== false;
+    const legacyFlkIncludeLoading = savedFlkState?.includeLoading !== false;
     let flkDraft = savedFlkState?.draft && typeof savedFlkState.draft === 'object' ?
       { pid: String(savedFlkState.draft.pid || ''), name: String(savedFlkState.draft.name || ''), weight: String(savedFlkState.draft.weight || '') } :
       { pid: '', name: '', weight: '' };
     const flkEntries = (Array.isArray(savedFlkState?.entries) ? savedFlkState.entries : [])
       .filter((entry) => entry && typeof entry.name === 'string' && Number(entry.weight) > 0 && Number(entry.weight) <= 50)
-      .map((entry) => ({ name: entry.name, result: calculateFlk(Number(entry.weight), flkIncludeLoading) }));
+      .map((entry) => {
+        const includeLoading = typeof entry.includeLoading === 'boolean' ? entry.includeLoading : legacyFlkIncludeLoading;
+        return { name: entry.name, includeLoading, result: calculateFlk(Number(entry.weight), includeLoading) };
+      });
     const saveFlkState = () => {
       try {
         localStorage.setItem(flkStateKey, JSON.stringify({
-          date: todayKey, includeLoading: flkIncludeLoading,
-          entries: flkEntries.map((entry) => ({ name: entry.name, weight: entry.result.weight })),
+          date: todayKey,
+          entries: flkEntries.map((entry) => ({ name: entry.name, weight: entry.result.weight, includeLoading: entry.includeLoading })),
           draft: flkDraft,
         }));
       } catch (_) { /* 저장 공간을 쓸 수 없어도 현재 화면은 유지한다. */ }
@@ -1199,7 +1203,7 @@
     const paintFlk = (patients) => {
       const body = box.querySelector('#vsp-body');
       if (!body) return;
-      text = flkText(flkEntries, flkIncludeLoading);
+      text = flkText(flkEntries);
       const options = ['<option value="">입원환자 선택</option>'].concat(patients.map((patient, index) =>
         '<option value="' + index + '"' + (String(patient.pid) === flkDraft.pid ? ' selected' : '') + '>' + esc(patient.name + ' · ' + patient.cage +
           (patient.weight ? ' · ' + patient.weight : ' · 체중 미입력')) + '</option>')).join('');
@@ -1209,20 +1213,21 @@
           '<span style="font-size:14px;color:#475569">' + label + '</span><strong style="font-size:15px;color:#334155;white-space:nowrap">' + value + '</strong></div>';
         return '<article class="vsp-flk-result" style="padding:11px 0 12px;border-bottom:2px solid #94a3b8">' +
           '<div class="vsp-flk-result-title" style="display:flex;align-items:center;gap:8px"><strong style="font-size:16px">' + esc(entry.name) +
-          ' <span style="font-size:14px;color:#64748b">(' + fixed(r.weight, 2) + ' kg)</span></strong><span style="flex:1"></span>' +
+          ' <span style="font-size:14px;color:#64748b">(' + fixed(r.weight, 2) + ' kg)</span></strong>' +
+          '<label class="vsp-flk-loading-check"><input data-flk-loading="' + index + '" type="checkbox"' + (!entry.includeLoading ? ' checked' : '') + '><span>로딩 제외</span></label>' +
+          '<span class="vsp-flk-title-spacer"></span>' +
           '<button data-flk-remove="' + index + '" aria-label="' + esc(entry.name) + ' 삭제" title="삭제" style="width:44px;height:44px;border:0;background:#fff;color:#64748b;font-size:22px">×</button></div>' +
           '<div style="margin-top:2px"><div class="vsp-flk-bag" style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:8px;background:#f1f5f9;border-bottom:2px solid #94a3b8">' +
           '<strong style="font-size:15px;color:#334155">IV bag</strong><strong style="font-size:18px;color:#111827;white-space:nowrap">' + r.bag + ' mL</strong></div>' +
           resultRow('Fentanyl CRI', fixed(r.fentanyl, 2) + ' mL') + resultRow('Lidocaine', fixed(r.lidocaine, 2) + ' mL') +
           resultRow('Ketamine', fixed(r.ketamine, 2) + ' mL') + resultRow('NS', fixed(r.ns, 2) + ' mL') +
-          (flkIncludeLoading ? resultRow('Fentanyl loading', fixed(r.loading, 2) + ' mL') : '') + '</div>' +
+          (entry.includeLoading ? resultRow('Fentanyl loading', fixed(r.loading, 2) + ' mL') : '') + '</div>' +
           '<div class="vsp-flk-rate" style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 3px"><span style="font-size:14px;color:#475569">속도</span>' +
           '<strong style="color:#0f766e;font-size:18px">' + r.rate.toFixed(2) + ' mL/hr</strong></div></article>';
       }).join('') : '<p style="color:#64748b;margin-top:18px">환자를 선택하거나 이름과 체중을 입력해 추가하세요.</p>';
       body.innerHTML = '<section class="vsp-flk-form">' +
-        '<div class="vsp-flk-controls"><label class="vsp-flk-patient-picker" for="vsp-flk-patient"><span>입원환자 불러오기</span>' +
+        '<label class="vsp-flk-patient-picker" for="vsp-flk-patient"><span>입원환자 불러오기</span>' +
         '<select id="vsp-flk-patient">' + options + '</select></label>' +
-        '<label class="vsp-flk-loading-check" for="vsp-flk-no-loading"><input id="vsp-flk-no-loading" type="checkbox"' + (!flkIncludeLoading ? ' checked' : '') + '><span>로딩 제외</span></label></div>' +
         '<div class="vsp-flk-entry-row">' +
         '<label style="font-size:13px;font-weight:700;color:#64748b">환자 이름<input id="vsp-flk-name" autocomplete="off" value="' + esc(flkDraft.name) + '" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 10px;font:inherit;font-size:16px" /></label>' +
         '<label style="font-size:13px;font-weight:700;color:#64748b">체중 kg<input id="vsp-flk-weight" inputmode="decimal" value="' + esc(flkDraft.weight) + '" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 6px;text-align:center;font:inherit;font-size:16px;font-weight:700" /></label>' +
@@ -1250,20 +1255,25 @@
       body.querySelector('#vsp-flk-add').onclick = () => {
         const name = nameInput.value.trim();
         const weight = Number(weightInput.value);
-        const result = calculateFlk(weight, flkIncludeLoading);
+        const includeLoading = true;
+        const result = calculateFlk(weight, includeLoading);
         if (!name) { error.textContent = '환자 이름을 입력하세요.'; nameInput.focus(); return; }
         if (!result) { error.textContent = '체중은 0보다 크고 50 kg 이하여야 합니다.'; weightInput.focus(); return; }
-        flkEntries.push({ name, result });
+        flkEntries.push({ name, result, includeLoading });
         flkDraft = { pid: '', name: '', weight: '' };
         saveFlkState();
         paintFlk(patients);
       };
-      body.querySelector('#vsp-flk-no-loading').onchange = (event) => {
-        flkIncludeLoading = !event.currentTarget.checked;
-        flkEntries.forEach((entry) => { entry.result = calculateFlk(entry.result.weight, flkIncludeLoading); });
-        saveFlkState();
-        paintFlk(patients);
-      };
+      body.querySelectorAll('[data-flk-loading]').forEach((checkbox) => {
+        checkbox.onchange = () => {
+          const entry = flkEntries[Number(checkbox.dataset.flkLoading)];
+          if (!entry) return;
+          entry.includeLoading = !checkbox.checked;
+          entry.result = calculateFlk(entry.result.weight, entry.includeLoading);
+          saveFlkState();
+          paintFlk(patients);
+        };
+      });
       body.querySelectorAll('[data-flk-remove]').forEach((button) => {
         button.onclick = () => { flkEntries.splice(Number(button.dataset.flkRemove), 1); saveFlkState(); paintFlk(patients); };
       });

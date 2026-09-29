@@ -11,6 +11,7 @@ const createDoseEngine = (drugs) => {
     ['Tranexamic acid', 'TXA', '트라넥삼산'], ['Dalteparin', 'dalte', 'datle'],
     ['G-CSF', 'g-csf', 'gcsf', '류코스팀'],
     ['Hydroxocobalamin', 'hydroxo', 'hydrocobalamin', 'cobalamin', 'B12', '비타민B12'],
+    ['Levetiracetam', 'leve'],
     ['Chlorpheniramine', 'chloropheniramine', 'chlorpeniramine', '클로르페니라민'],
     ['Meloxicam', 'melo'], ['Meropenem', 'mero', '메로페넴'],
     ['Furosemide', 'furo', '퓨로세마이드', '라식스'],
@@ -34,7 +35,7 @@ const createDoseEngine = (drugs) => {
     const instructionWithoutDilution = String(instruction || '')
       .replace(/\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?\s*희석|\d+(?:\.\d+)?\s*배\s*희석/ig, ' ')
       .trim();
-    if (/\d\s*(?:mpk|mg|ml|mcg|ug|iu|cc)|농도/i.test(instructionWithoutDilution) && !overrides.written) {
+    if (/\d\s*(?:mpk|mg|ml|mcg|ug|iu|cc)|농도/i.test(instructionWithoutDilution) && !dose) {
       return fail('용량 확인 필요');
     }
     if (/^\d+(?:\.\d+)?(?:ml|cc)$/.test(dose)) {
@@ -42,13 +43,14 @@ const createDoseEngine = (drugs) => {
       return volume > 0 ? { volume, text: volumeText(volume) + ' mL', basis: '차트 mL' } : fail('용량 확인 필요');
     }
 if (!drug && !dose) return fail('용량·역가 확인 필요');
-    let value = drug && drug.dose, unit = drug && (drug.unit || 'mg'), perKg = true, origin = '기본';
+    let value = drug && drug.dose, unit = drug && (drug.unit || 'mg'), perKg = true, perCat = false, origin = '기본';
     if (dose) {
-      const match = dose.match(/^(\d+(?:\.\d+)?)(mpk|mg\/kg|gpk|ug\/kg|mcg\/kg|iu\/kg|u\/kg|ml\/kg|mg|mg\/dog|mg\/cat)$/);
+      const match = dose.match(/^(\d+(?:\.\d+)?)(mpk|mg\/kg|gpk|ug\/kg|mcg\/kg|iu\/kg|u\/kg|ml\/kg|mg|mg\/dog|mg\/cat|ug\/cat|mcg\/cat)$/);
       if (!match) return fail('용량 확인 필요');
       value = Number(match[1]); origin = '차트';
       const u = match[2];
-      perKg = !['mg', 'mg/dog', 'mg/cat'].includes(u);
+      perCat = /^(?:mg|ug|mcg)\/cat$/.test(u);
+      perKg = !perCat && !['mg', 'mg/dog'].includes(u);
       unit = /^(iu|u)\//.test(u) ? 'IU' : /^(ug|mcg)\//.test(u) ? 'ug' : u === 'ml/kg' ? 'mL' : 'mg';
       if (u === 'gpk') value *= 1000;
     }
@@ -70,7 +72,8 @@ if (unit !== 'mL' && !(conc > 0)) return fail('역가 확인 필요');
       unit === 'ug' && concentrationUnit === 'mg' ? 0.001 :
         unit === 'mg' && concentrationUnit === 'ug' ? 1000 : 1;
     const volume = value * (perKg ? kg : 1) * conversion / (unit === 'mL' ? 1 : conc);
-    const doseUnit = perKg ? (unit === 'mg' ? 'mpk' : unit === 'ug' ? 'µg/kg' : unit + '/kg') : unit;
+    const doseUnit = perCat ? (unit === 'ug' ? 'µg/cat' : unit + '/cat') :
+      perKg ? (unit === 'mg' ? 'mpk' : unit === 'ug' ? 'µg/kg' : unit + '/kg') : unit;
     const doseText = value + ' ' + doseUnit + (origin === '기본' ? '(기본)' : '');
     const concText = unit === 'mL' ? '' : (manualConc > 0 ? conc + ' ' + concentrationUnit + '/mL' : (drug.concentrationLabel ||
       conc + (drugUnit === 'IU' ? ' IU/mL' : drugUnit === 'ug' ? ' µg/mL' : ' mg/mL')));

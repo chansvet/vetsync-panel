@@ -111,6 +111,14 @@
     "name": "Hydroxocobalamin",
     "dose": null,
     "conc": 2.5,
+    "concentrationLabel": "2500 µg/mL",
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Levetiracetam",
+    "dose": null,
+    "conc": 100,
     "sc": false,
     "note": ""
   },
