@@ -108,6 +108,13 @@
     "note": "0.02 mL/kg"
   },
   {
+    "name": "Hydroxocobalamin",
+    "dose": null,
+    "conc": 2.5,
+    "sc": false,
+    "note": ""
+  },
+  {
     "name": "Meloxicam",
     "dose": 0.1,
     "conc": 5,
