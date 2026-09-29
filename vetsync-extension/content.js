@@ -278,10 +278,10 @@ lidocaineRate: 1.5, lidocaineConc: 20,
 ketamineRate: 0.15, ketamineConc: 50,
 loadingDose: 0.002, loadingConc: 0.05,
 };
-const flkValues = (weight, bag, rate) => {
+const flkValues = (weight, bag, rate, includeLoading = true) => {
 const duration = bag / rate;
 const fentanyl = FLK.fentanylRate * weight * duration / FLK.fentanylConc;
-const loading = FLK.loadingDose * weight / FLK.loadingConc;
+const loading = includeLoading ? FLK.loadingDose * weight / FLK.loadingConc : 0;
 const lidocaine = FLK.lidocaineRate * weight * duration / FLK.lidocaineConc;
 const ketamine = FLK.ketamineRate * weight * duration / FLK.ketamineConc;
 const total = fentanyl + lidocaine + ketamine;
@@ -296,13 +296,13 @@ ns: ns >= 0,
 return { weight, rate, bag, duration, fentanyl, loading, fentanylTotal: fentanyl + loading,
 lidocaine, ketamine, total, ns, checks, valid: Object.values(checks).every(Boolean) };
 };
-const calculateFlk = (weight) => {
+const calculateFlk = (weight, includeLoading = true) => {
 const value = Number(weight);
 if (!(value > 0) || value > 50) return null;
 for (let rate = 1; rate <= 100; rate += 0.5) {
 if (rate + 1e-12 < 0.118 * value) continue;
 for (let bag = 100; bag >= 1; bag -= 1) {
-const result = flkValues(value, bag, rate);
+const result = flkValues(value, bag, rate, includeLoading);
 if (result.valid) return result;
 }
 }
@@ -765,6 +765,29 @@ else volume += item.calculation.volume * count;
 });
 return { ...rule, volume, count: volume > 0 ? Math.ceil(volume / rule.size - 1e-12) : 0, unresolved };
 }).filter((item) => item.count || item.unresolved);
+const syringeNeeds = (snapshot) => {
+const counts = { 1: 0, 3: 0, 5: 0, 10: 0 };
+let unresolved = 0;
+Object.values(snapshot?.patients || {}).forEach((patient) => {
+(patient.items || []).forEach((item) => {
+if (item.conditional) return;
+const administrations = item.times.filter((time) => !time.cancelled).length;
+if (!administrations) return;
+const volume = item.calculation?.volume;
+if (volume == null || item.dilution?.valid === false) {
+unresolved += administrations;
+return;
+}
+const syringeVolume = volume * (1 + (item.dilution?.nsRatio || 0));
+if (!(syringeVolume > 0)) return;
+if (syringeVolume <= 1) counts[1] += administrations;
+else if (syringeVolume <= 3) counts[3] += administrations;
+else if (syringeVolume <= 5.5) counts[5] += administrations;
+else counts[10] += Math.ceil(syringeVolume / 10) * administrations;
+});
+});
+return { counts, unresolved };
+};
 const preparationItem = (item, prev = null, kind = '') => {
 const calc = item.calculation;
 const active = (x) => x.times.filter((t) => !t.cancelled);
@@ -1142,7 +1165,7 @@ compareText(a.sortCage || a.cage, b.sortCage || b.cage) || byName;
 }),
 }));
 const fixed = (value, digits = 3) => Number(value).toFixed(digits);
-const flkText = (entries) => entries.map((entry) => {
+const flkText = (entries, includeLoading = true) => entries.map((entry) => {
 const r = entry.result;
 return entry.name + ' (' + fixed(r.weight, 2) + ' kg)\n' +
 'IV bag ' + r.bag + ' mL\n' +
@@ -1150,21 +1173,35 @@ return entry.name + ' (' + fixed(r.weight, 2) + ' kg)\n' +
 'Lidocaine ' + fixed(r.lidocaine, 2) + ' mL\n' +
 'Ketamine ' + fixed(r.ketamine, 2) + ' mL\n' +
 'NS ' + fixed(r.ns, 2) + ' mL\n' +
-'Fentanyl loading ' + fixed(r.loading, 2) + ' mL\n' +
+(includeLoading ? 'Fentanyl loading ' + fixed(r.loading, 2) + ' mL\n' : '로딩 제외\n') +
 '속도 ' + r.rate.toFixed(2) + ' mL/hr';
 }).join('\n\n');
 const ampuleText = (items) => items.map((item) => item.label + ' ' + fixed(item.volume, 2) + ' mL → ' + item.count + '병' +
 (item.unresolved ? ' · 계산 불가 ' + item.unresolved + '회' : '')).join(' · ');
+const syringeText = (snapshot) => {
+const { counts, unresolved } = syringeNeeds(snapshot);
+const parts = Object.entries(counts).filter(([, count]) => count)
+.map(([size, count]) => size + 'cc 주사기 ' + count + '개');
+if (unresolved) parts.push('용량 확인 필요 ' + unresolved + '회');
+return parts.join(' · ');
+};
+const preparationText = (snapshot) => [
+ampuleText(ampuleNeeds(snapshot)),
+syringeText(snapshot) ? '주사기 ' + syringeText(snapshot) : '',
+].filter(Boolean).join('\n');
 const ampuleHtml = (snapshot) => {
 const items = ampuleNeeds(snapshot);
-if (!items.length) return '';
-return '<section style="margin:10px 0 4px;padding:10px 12px;border:1px solid #cbd5e1;border-left:3px solid #0f766e;border-radius:4px;background:#f8fafc">' +
-'<div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:5px">필요 약물 · 취소/PRN 제외</div>' +
-'<div style="display:flex;gap:6px 12px;flex-wrap:wrap">' + items.map((item) =>
+const syringes = syringeText(snapshot);
+if (!items.length && !syringes) return '';
+return '<section id="vsp-prep-summary" style="margin:10px 0 4px;padding:10px 12px;border:1px solid #cbd5e1;border-left:3px solid #0f766e;border-radius:4px;background:#f8fafc">' +
+'<div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:5px">필요 약물·주사기 · 취소/PRN 제외</div>' +
+(items.length ? '<div style="display:flex;gap:6px 12px;flex-wrap:wrap">' + items.map((item) =>
 '<span style="white-space:nowrap"><strong>' + esc(item.label) + ' ' + item.count + '병</strong>' +
 '<span style="font-size:12px;color:#64748b"> (' + fixed(item.volume, 2) + '/' + item.size + ' mL)</span>' +
 (item.unresolved ? '<span style="font-size:12px;color:#b45309;font-weight:700"> · ' + item.unresolved + '회 확인</span>' : '') + '</span>').join('') +
-'</div></section>';
+'</div>' : '') +
+(syringes ? '<div style="display:flex;gap:6px 12px;flex-wrap:wrap;margin-top:' + (items.length ? '8px' : '0') + '">' +
+'<strong style="white-space:nowrap">주사기</strong><span>' + esc(syringes) + '</span></div>' : '') + '</section>';
 };
 const TABS = [
 { id: 'blood', label: '채혈', run: bloodwork },
@@ -1183,7 +1220,7 @@ box.innerHTML =
 '<div style="position:sticky;top:0;background:#0f766e;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
 TABS.map((t, i) => '<button data-tab="' + t.id + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;' +
 'border-radius:8px;background:' + (i === 0 ? '#fff' : 'rgba(255,255,255,.2)') + ';color:' + (i === 0 ? '#0f766e' : '#fff') + '">' + t.label + '</button>').join('') +
-'<span style="flex:1"></span><span style="font-size:11px">2.2.2</span>' +
+'<span style="flex:1"></span><span style="font-size:11px">2.2.3</span>' +
 '<button id="vsp-copy" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">복사</button>' +
 '<button id="vsp-x" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.2);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1191,7 +1228,29 @@ document.body.appendChild(box);
 let text = '';
 let requestId = 0;
 let sortMode = 'name';
-const flkEntries = [];
+const flkStateKey = 'vetsync-flk-state-v1';
+const todayKey = ymd(new Date());
+let savedFlkState = null;
+try {
+const saved = JSON.parse(localStorage.getItem(flkStateKey) || 'null');
+if (saved?.date === todayKey) savedFlkState = saved;
+} catch (_) { /* 저장값이 손상되어도 FLK를 새로 쓸 수 있다. */ }
+let flkIncludeLoading = savedFlkState?.includeLoading !== false;
+let flkDraft = savedFlkState?.draft && typeof savedFlkState.draft === 'object' ?
+{ pid: String(savedFlkState.draft.pid || ''), name: String(savedFlkState.draft.name || ''), weight: String(savedFlkState.draft.weight || '') } :
+{ pid: '', name: '', weight: '' };
+const flkEntries = (Array.isArray(savedFlkState?.entries) ? savedFlkState.entries : [])
+.filter((entry) => entry && typeof entry.name === 'string' && Number(entry.weight) > 0 && Number(entry.weight) <= 50)
+.map((entry) => ({ name: entry.name, result: calculateFlk(Number(entry.weight), flkIncludeLoading) }));
+const saveFlkState = () => {
+try {
+localStorage.setItem(flkStateKey, JSON.stringify({
+date: todayKey, includeLoading: flkIncludeLoading,
+entries: flkEntries.map((entry) => ({ name: entry.name, weight: entry.result.weight })),
+draft: flkDraft,
+}));
+} catch (_) { /* 저장 공간을 쓸 수 없어도 현재 화면은 유지한다. */ }
+};
 const refreshLocalInjectionPatient = (sections, pid) => {
 if (!sections || !sections.snapshot || !sections.snapshot.patients || !sections.snapshot.patients[pid]) return false;
 recalculatePatient(sections.snapshot.patients[pid]);
@@ -1211,9 +1270,9 @@ return true;
 const paintFlk = (patients) => {
 const body = box.querySelector('#vsp-body');
 if (!body) return;
-text = flkText(flkEntries);
+text = flkText(flkEntries, flkIncludeLoading);
 const options = ['<option value="">입원환자 선택</option>'].concat(patients.map((patient, index) =>
-'<option value="' + index + '">' + esc(patient.name + ' · ' + patient.cage +
+'<option value="' + index + '"' + (String(patient.pid) === flkDraft.pid ? ' selected' : '') + '>' + esc(patient.name + ' · ' + patient.cage +
 (patient.weight ? ' · ' + patient.weight : ' · 체중 미입력')) + '</option>')).join('');
 const results = flkEntries.length ? flkEntries.map((entry, index) => {
 const r = entry.result;
@@ -1227,7 +1286,7 @@ return '<article style="padding:11px 0 12px;border-bottom:2px solid #94a3b8">' +
 '<strong style="font-size:15px;color:#334155">IV bag</strong><strong style="font-size:18px;color:#111827;white-space:nowrap">' + r.bag + ' mL</strong></div>' +
 resultRow('Fentanyl CRI', fixed(r.fentanyl, 2) + ' mL') + resultRow('Lidocaine', fixed(r.lidocaine, 2) + ' mL') +
 resultRow('Ketamine', fixed(r.ketamine, 2) + ' mL') + resultRow('NS', fixed(r.ns, 2) + ' mL') +
-resultRow('Fentanyl loading', fixed(r.loading, 2) + ' mL') + '</div>' +
+(flkIncludeLoading ? resultRow('Fentanyl loading', fixed(r.loading, 2) + ' mL') : '') + '</div>' +
 '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 3px"><span style="font-size:14px;color:#475569">속도</span>' +
 '<strong style="color:#0f766e;font-size:18px">' + r.rate.toFixed(2) + ' mL/hr</strong></div></article>';
 }).join('') : '<p style="color:#64748b;margin-top:18px">환자를 선택하거나 이름과 체중을 입력해 추가하세요.</p>';
@@ -1235,38 +1294,60 @@ body.innerHTML = '<section style="margin:0 -16px;padding:12px 16px;border-bottom
 '<div style="max-width:760px;margin:0 auto"><label for="vsp-flk-patient" style="display:block;font-size:13px;font-weight:800;color:#475569;margin-bottom:5px">입원환자 불러오기</label>' +
 '<select id="vsp-flk-patient" style="box-sizing:border-box;width:100%;height:44px;border:1px solid #94a3b8;border-radius:5px;background:#fff;padding:0 10px;font:inherit;font-size:16px">' + options + '</select>' +
 '<div style="display:grid;grid-template-columns:minmax(0,1fr) 92px 64px;gap:8px;margin-top:10px">' +
-'<label style="font-size:13px;font-weight:700;color:#64748b">환자 이름<input id="vsp-flk-name" autocomplete="off" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 10px;font:inherit;font-size:16px" /></label>' +
-'<label style="font-size:13px;font-weight:700;color:#64748b">체중 kg<input id="vsp-flk-weight" inputmode="decimal" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 6px;text-align:center;font:inherit;font-size:16px;font-weight:700" /></label>' +
+'<label style="font-size:13px;font-weight:700;color:#64748b">환자 이름<input id="vsp-flk-name" autocomplete="off" value="' + esc(flkDraft.name) + '" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 10px;font:inherit;font-size:16px" /></label>' +
+'<label style="font-size:13px;font-weight:700;color:#64748b">체중 kg<input id="vsp-flk-weight" inputmode="decimal" value="' + esc(flkDraft.weight) + '" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 6px;text-align:center;font:inherit;font-size:16px;font-weight:700" /></label>' +
 '<button id="vsp-flk-add" style="align-self:end;height:44px;border:0;border-radius:5px;background:#0f766e;color:#fff;font:inherit;font-size:15px;font-weight:800">추가</button></div>' +
-'<div id="vsp-flk-error" role="alert" style="min-height:18px;margin-top:3px;font-size:12px;font-weight:700;color:#b42318"></div></div></section>' + results;
+'<div id="vsp-flk-error" role="alert" style="min-height:18px;margin-top:3px;font-size:12px;font-weight:700;color:#b42318"></div>' +
+'<button id="vsp-flk-loading-toggle" aria-pressed="' + (!flkIncludeLoading) + '" style="min-height:44px;margin-top:4px;padding:0 12px;border:1px solid ' +
+(!flkIncludeLoading ? '#0f766e' : '#94a3b8') + ';border-radius:5px;background:' + (!flkIncludeLoading ? '#ecfdf5' : '#fff') + ';color:' +
+(!flkIncludeLoading ? '#0f766e' : '#475569') + ';font:inherit;font-size:14px;font-weight:800">' +
+(flkIncludeLoading ? '로딩 제외' : '로딩 제외 취소') + '</button></div></section>' + results;
 const select = body.querySelector('#vsp-flk-patient');
 const nameInput = body.querySelector('#vsp-flk-name');
 const weightInput = body.querySelector('#vsp-flk-weight');
 const error = body.querySelector('#vsp-flk-error');
+const saveDraft = () => {
+flkDraft = { pid: select.value === '' ? '' : String(patients[Number(select.value)]?.pid || ''),
+name: nameInput.value, weight: weightInput.value };
+saveFlkState();
+};
+nameInput.addEventListener('input', saveDraft);
+weightInput.addEventListener('input', saveDraft);
 select.onchange = () => {
 const patient = select.value === '' ? null : patients[Number(select.value)];
 nameInput.value = patient?.name || '';
 weightInput.value = patient?.weight ? patient.weight.replace(/\s*kg$/i, '') : '';
+flkDraft = { pid: patient?.pid ? String(patient.pid) : '', name: nameInput.value, weight: weightInput.value };
+saveFlkState();
 error.textContent = patient && !patient.weight ? '체중을 직접 입력하세요.' : '';
 };
 body.querySelector('#vsp-flk-add').onclick = () => {
 const name = nameInput.value.trim();
 const weight = Number(weightInput.value);
-const result = calculateFlk(weight);
+const result = calculateFlk(weight, flkIncludeLoading);
 if (!name) { error.textContent = '환자 이름을 입력하세요.'; nameInput.focus(); return; }
 if (!result) { error.textContent = '체중은 0보다 크고 50 kg 이하여야 합니다.'; weightInput.focus(); return; }
 flkEntries.push({ name, result });
+flkDraft = { pid: '', name: '', weight: '' };
+saveFlkState();
+paintFlk(patients);
+};
+body.querySelector('#vsp-flk-loading-toggle').onclick = () => {
+flkIncludeLoading = !flkIncludeLoading;
+flkEntries.forEach((entry) => { entry.result = calculateFlk(entry.result.weight, flkIncludeLoading); });
+saveFlkState();
 paintFlk(patients);
 };
 body.querySelectorAll('[data-flk-remove]').forEach((button) => {
-button.onclick = () => { flkEntries.splice(Number(button.dataset.flkRemove), 1); paintFlk(patients); };
+button.onclick = () => { flkEntries.splice(Number(button.dataset.flkRemove), 1); saveFlkState(); paintFlk(patients); };
 });
 };
 const paint = (id, sections) => {
 const body = box.querySelector('#vsp-body');
 if (!body) return;
 const ordered = sortSections(sections, sortMode);
-text = (id === 'inj' && sections.snapshot ? ampuleText(ampuleNeeds(sections.snapshot)) + '\n\n' : '') + asText(ordered);
+const prep = id === 'inj' && sections.snapshot ? preparationText(sections.snapshot) : '';
+text = (prep ? prep + '\n\n' : '') + asText(ordered);
 const sortControl =
 '<div style="margin:0 -16px;padding:9px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px">' +
 '<strong style="font-size:13px;color:#4b5563">정렬</strong>' +
@@ -1332,6 +1413,12 @@ const nsText = result.volume != null && nsRatio > 0 ? ' + NS ' + volumeText(resu
 volume.textContent = result.volume == null ? result.text : result.text + nsText;
 volume.style.color = result.volume == null ? '#b45309' : '#0f766e';
 basis.textContent = result.volume == null ? '' : result.basis + (nsText ? ' · 희석 NS 포함' : '');
+if (refreshLocalInjectionPatient(sections, String(manualBox.dataset.pid))) {
+const prep = preparationText(sections.snapshot);
+text = (prep ? prep + '\n\n' : '') + asText(sortSections(sections, sortMode));
+const summary = body.querySelector('#vsp-prep-summary');
+if (summary) summary.outerHTML = ampuleHtml(sections.snapshot);
+}
 };
 manualBox.querySelectorAll('input,select').forEach((control) => {
 control.addEventListener('input', update);
