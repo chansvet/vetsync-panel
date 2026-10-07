@@ -1389,7 +1389,7 @@ box.innerHTML =
 '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
 '<span class="vsp-brand">VETSYNC</span>' +
 '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-'<span class="vsp-header-spacer"></span><span class="vsp-version">2.3.2</span>' +
+'<span class="vsp-header-spacer"></span><span class="vsp-version">2.3.3</span>' +
 '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
 '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1419,6 +1419,9 @@ panelStyle.textContent = `
 #vsp .vsp-cage{display:inline-block;white-space:nowrap;font-size:14px;line-height:1.5}
 #vsp .vsp-treatment{padding:7px 0!important;color:#253632;font-size:16px!important;line-height:1.55!important;overflow-wrap:anywhere}
 #vsp .vsp-volume{font-size:20px!important;font-weight:800;line-height:1.5;color:#344e44}
+#vsp .vsp-injection-patient .vsp-patient-title{font-size:14px!important}
+#vsp .vsp-injection-patient .vsp-treatment{font-size:14px!important;padding:5px 0!important;line-height:1.5!important}
+#vsp .vsp-injection-patient .vsp-volume{font-size:14px!important;font-weight:800}
 #vsp .vsp-dose-basis{font-size:13px!important;line-height:1.65;color:#63756c!important}
 #vsp .vsp-treatment + .vsp-treatment{border-top:1px solid #e5ebe8!important}
 #vsp .vsp-patient-note{color:#53645f!important;font-size:14px;line-height:1.5}
