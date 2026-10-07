@@ -1051,8 +1051,8 @@
   const toHtml = (s) => esc(s)
     .split('\uE00A').join('<span style="background:#fef3c7;color:#92400e;padding:0 3px;border-radius:2px">').split('\uE00B').join('</span>')
     .replace(/\n/g, '<br>')
-    .split(M0).join('<strong style="font-size:16px">').split(M1).join('</strong>')
-    .split(S0).join('<span style="font-size:12px;color:#64748b">').split(S1).join('</span>')
+    .split(M0).join('<strong class="vsp-volume" style="font-size:16px">').split(M1).join('</strong>')
+    .split(S0).join('<span class="vsp-dose-basis" style="font-size:12px;color:#64748b">').split(S1).join('</span>')
     .split(U0).join('<u style="font-weight:800">').split(U1).join('</u>')
     .split(E0).join('<strong style="font-weight:800;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px">')
     .split(E1).join('</strong>')
@@ -1127,7 +1127,7 @@
         (typeof g.prepared === 'boolean' ? '<label class="vsp-patient-ready-control" title="환자 주사 준비 완료"><input type="checkbox" data-patient-ready="' + encodeURIComponent(g.pid) + '" ' +
           (g.prepared ? 'checked ' : '') + 'aria-label="' + esc(g.sortName + ' 주사 준비 완료').replace(/"/g, '&quot;') + '"></label>' : '') +
         patientTitleHtml(g.title, g.previousWeight, showManualWeight, g.manualWeight, g.pid) +
-        ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span>' +
+        ' <span class="vsp-cage" style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span>' +
       (g.status ? ' <span class="vsp-status vsp-status-' + (g.status === '연장' ? 'extended' : g.status === '미연장' ? 'not-extended' : 'discharged') + '" style="display:inline-block;white-space:nowrap;padding:0 5px;border-radius:3px;font-size:13px;font-weight:800;' +
         (g.status === '연장' ? 'background:#fef08a;color:#713f12' :
           g.status === '미연장' ? 'background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db' :
@@ -1218,7 +1218,7 @@
       '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
       '<span class="vsp-brand">VETSYNC</span>' +
       '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-      '<span class="vsp-header-spacer"></span><span class="vsp-version">2.3.1</span>' +
+      '<span class="vsp-header-spacer"></span><span class="vsp-version">2.3.2</span>' +
       '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
       '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
       '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1228,7 +1228,7 @@
       #vsp{box-sizing:border-box!important;color:#172522!important;background:#f3f6f5!important;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif!important;line-height:1.5!important}
       #vsp *{box-sizing:border-box}
       #vsp .vsp-header{position:sticky;top:0;z-index:5;gap:9px;padding:calc(8px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 9px max(14px,env(safe-area-inset-left))!important;background:#173b36!important;box-shadow:0 2px 8px rgba(14,35,31,.15)}
-      #vsp .vsp-brand{font-size:11px;font-weight:800;letter-spacing:1.2px;color:#c7ddd5;white-space:nowrap}
+      #vsp .vsp-brand{font-size:11px;font-weight:800;letter-spacing:0;color:#c7ddd5;white-space:nowrap}
       #vsp .vsp-tabs{display:flex;align-items:center;gap:3px}
       #vsp [data-tab]{min-height:42px;padding:8px 14px!important;border-radius:6px!important;color:#e3efeb!important;background:transparent!important;cursor:pointer}
       #vsp [data-tab][aria-current="page"]{background:#f5f8f6!important;color:#173b36!important}
@@ -1238,51 +1238,56 @@
       #vsp button,#vsp input,#vsp select{font:inherit}
       #vsp button{transition:background-color .14s ease,border-color .14s ease,color .14s ease}
       #vsp button:focus-visible,#vsp input:focus-visible,#vsp select:focus-visible{outline:3px solid #55aa98!important;outline-offset:2px}
-      #vsp .vsp-body{width:min(100%,1040px);margin:0 auto;padding:0 18px 36px!important;color:#172522}
-      #vsp .vsp-section-heading{margin:22px 0 8px!important;padding:0 0 6px;border-bottom:1px solid #d7e0dc;color:#53635e!important;font-size:13px!important;font-weight:800;letter-spacing:.25px}
+      #vsp .vsp-body{width:min(100%,960px);margin:0 auto;padding:0 18px 28px!important;color:#172522}
+      #vsp .vsp-section-heading{margin:16px 0 6px!important;padding:0 0 5px;border-bottom:1px solid #d7e0dc;color:#53635e!important;font-size:14px!important;font-weight:700;letter-spacing:0}
       #vsp .vsp-section-warning{color:#935c17!important;border-color:#ead8b9}
-      #vsp .vsp-patient{padding:12px 12px 9px!important;border:0!important;border-bottom:1px solid #d6dfdb!important;border-left:3px solid #a8b9b2!important;background:rgba(255,255,255,.78);border-radius:0 5px 5px 0;margin:0 0 7px}
-      #vsp .vsp-injection-patient{border-bottom:2px solid #aebdb7!important;margin-bottom:9px;padding-top:12px!important;padding-bottom:9px!important}
+      #vsp .vsp-patient{padding:8px 12px 7px!important;border:0!important;border-bottom:1px solid #d6dfdb!important;border-left:3px solid #a8b9b2!important;background:#fff;border-radius:0;margin:0 0 6px}
+      #vsp .vsp-injection-patient{border-bottom:2px solid #8fa39a!important;margin-bottom:8px;padding-top:8px!important;padding-bottom:7px!important}
       #vsp .vsp-patient-updated{border-left-color:#bd7b28!important;background:#fffaf2}
-      #vsp .vsp-patient-title{color:#172522;font-size:16px!important;font-weight:750!important;line-height:1.5!important}
-      #vsp .vsp-treatment{padding:6px 0!important;color:#253632;font-size:15px!important;line-height:1.55!important}
+      #vsp .vsp-patient-title{color:#172522;font-size:17px!important;font-weight:750!important;line-height:1.5!important;overflow-wrap:anywhere}
+      #vsp .vsp-cage{display:inline-block;white-space:nowrap;font-size:14px;line-height:1.5}
+      #vsp .vsp-treatment{padding:7px 0!important;color:#253632;font-size:16px!important;line-height:1.55!important;overflow-wrap:anywhere}
+      #vsp .vsp-volume{font-size:20px!important;font-weight:800;line-height:1.5;color:#344e44}
+      #vsp .vsp-dose-basis{font-size:13px!important;line-height:1.65;color:#63756c!important}
       #vsp .vsp-treatment + .vsp-treatment{border-top:1px solid #e5ebe8!important}
-      #vsp .vsp-patient-note{color:#53645f!important;font-size:13px}
+      #vsp .vsp-patient-note{color:#53645f!important;font-size:14px;line-height:1.5}
       #vsp .vsp-status{margin-left:2px;padding:2px 7px!important;border-radius:4px!important;font-size:12px!important;vertical-align:1px}
       #vsp .vsp-status-extended{background:#f4e6a2!important;color:#5e4a12!important}
       #vsp .vsp-status-not-extended{background:#edf1ef!important;color:#53615c!important;border:1px solid #d8e0dc!important}
       #vsp .vsp-status-discharged{background:#f9e8e4!important;color:#8a3d31!important;border:1px solid #e8c9c3!important}
       #vsp .vsp-updated-tag{padding:2px 6px!important;border:1px solid #e4c38e!important;border-radius:4px!important;background:#fff2d9!important;color:#84561d!important;font-size:11px!important;vertical-align:1px}
-      #vsp #vsp-prep-summary{margin:12px 0 8px!important;padding:12px 14px!important;border:1px solid #d7e0dc!important;border-left:3px solid #527f70!important;border-radius:5px!important;background:#fff!important;color:#263832}
+      #vsp #vsp-prep-summary{margin:9px 0!important;padding:9px 12px!important;border:0!important;border-top:1px solid #d7e0dc!important;border-bottom:1px solid #d7e0dc!important;border-left:3px solid #527f70!important;border-radius:0!important;background:#fff!important;color:#263832;font-size:14px;line-height:1.6}
+      #vsp #vsp-prep-summary > div:first-child{font-size:13px!important;margin-bottom:4px!important}
       #vsp .vsp-sortbar,#vsp .vsp-changebar,#vsp .vsp-first-check,#vsp .vsp-refresh-row{margin-left:0!important;margin-right:0!important;border-radius:4px}
-      #vsp .vsp-sortbar{padding:9px 0!important;border-color:#dbe3df!important;background:#f6f8f7}
+      #vsp .vsp-list-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 0 8px;border-bottom:1px solid #dbe3df}
+      #vsp .vsp-sortbar{padding:0!important;border:0!important;background:transparent;gap:8px!important}
       #vsp .vsp-sort-options{padding:2px;border:1px solid #d1dbd6!important;border-radius:6px!important;background:#fff}
       #vsp [data-sort]{min-height:36px;padding:5px 12px!important;border:0!important;border-radius:4px!important;background:transparent!important;color:#41544c!important}
       #vsp [data-sort][aria-pressed="true"]{background:#315f51!important;color:#fff!important}
       #vsp #vsp-refresh{min-height:40px;padding:6px 12px!important;border-color:#bdcbc4!important;border-radius:5px!important;color:#315f51}
-      #vsp .vsp-time-filter{display:flex;align-items:center;gap:10px;margin:10px 0;color:#53635e;font-size:13px;font-weight:700}
+      #vsp .vsp-time-filter{display:flex;align-items:center;gap:8px;margin:0;color:#53635e;font-size:13px;font-weight:700}
       #vsp .vsp-time-filter select{min-height:40px;padding:6px 30px 6px 10px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#253632;font:inherit;font-size:16px}
-      #vsp .vsp-ready-row{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px}
-      #vsp .vsp-treatment-prepared{opacity:.5}
+      #vsp .vsp-ready-row{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:7px}
+      #vsp .vsp-treatment-prepared{opacity:.55}
       #vsp .vsp-patient-ready:not(.vsp-patient-updated){background:#edf1ef;border-left-color:#c6d1cb!important}
       #vsp .vsp-patient-ready:not(.vsp-patient-updated) .vsp-patient-title{color:#64746c}
-      #vsp .vsp-patient-ready-control{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;width:32px;height:36px;margin-right:3px;cursor:pointer}
+      #vsp .vsp-patient-ready-control{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;width:32px;height:36px;margin-right:4px;cursor:pointer}
       #vsp .vsp-patient-ready-control input{appearance:none;-webkit-appearance:none;width:19px;height:19px;position:relative;border:1px solid #8da297;border-radius:3px;background:#fff;margin:0;cursor:pointer}
       #vsp .vsp-patient-ready-control input:checked:after{content:"";position:absolute;left:5px;top:2px;width:5px;height:9px;border:solid #315f51;border-width:0 2px 2px 0;transform:rotate(45deg)}
-      #vsp .vsp-ready-slot{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px;max-width:100%;font-size:12px;color:#53635e}
+      #vsp .vsp-ready-slot{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px;max-width:100%;font-size:13px;line-height:1.6;color:#53635e}
       #vsp .vsp-ready-slot label{display:flex;align-items:center;gap:6px;min-height:40px;cursor:pointer;white-space:nowrap}
       #vsp .vsp-ready-slot input{appearance:none;-webkit-appearance:none;width:18px;height:18px;flex:none;position:relative;border:1px solid #a9b8b0;border-radius:3px;background:#fff;margin:0}
       #vsp .vsp-ready-slot input:checked:after{content:"";position:absolute;left:5px;top:2px;width:5px;height:9px;border:solid #315f51;border-width:0 2px 2px 0;transform:rotate(45deg)}
       #vsp .vsp-ready-slot input:disabled{opacity:.4;cursor:default}
-      #vsp .vsp-ready-changed{padding:0 7px;border-left:2px solid #bd7b28;background:#fff4df;color:#84561d}
+      #vsp .vsp-ready-changed{padding:5px 8px;border-left:2px solid #bd7b28;background:#fff4df;color:#84561d}
       #vsp .vsp-ready-before{color:#8a3d31;text-decoration:line-through;overflow-wrap:anywhere}
       #vsp .vsp-ready-now{font-weight:700;overflow-wrap:anywhere}
       #vsp .vsp-ready-slot button{min-height:40px;border:1px solid #e4c38e;border-radius:4px;padding:4px 8px;background:#fff;color:#84561d;font:inherit}
       #vsp .vsp-ready-slot input:focus-visible,#vsp .vsp-ready-slot button:focus-visible,#vsp #vsp-time:focus-visible{outline:2px solid #315f51;outline-offset:3px}
-      #vsp .vsp-first-check{padding:9px 12px!important;border:1px solid #d4e2d9!important;background:#eef4f0!important;color:#3e6654!important}
-      #vsp .vsp-changebar{padding:10px 12px!important;border:1px solid #e5d5b8!important;background:#fff8eb!important}
+      #vsp .vsp-first-check{padding:6px 10px!important;border:0!important;background:#eef4f0!important;color:#3e6654!important;font-size:13px;line-height:1.5}
+      #vsp .vsp-changebar{padding:5px 10px!important;border:0!important;border-left:2px solid #bd7b28!important;background:#fff8eb!important;font-size:14px}
       #vsp #vsp-accept{min-height:40px;padding:7px 12px!important;border-color:#91aa9d!important;border-radius:5px!important;color:#315f51}
-      #vsp .vsp-flk-form{margin:0 0 16px!important;padding:15px!important;border:1px solid #d5dfda!important;border-radius:6px!important;background:#fff!important;box-shadow:0 2px 8px rgba(27,57,48,.05)}
+      #vsp .vsp-flk-form{margin:0 0 12px!important;padding:12px!important;border:1px solid #d5dfda!important;border-radius:5px!important;background:#fff!important}
       #vsp .vsp-flk-patient-picker{display:grid;gap:5px;min-width:0;margin-bottom:12px;color:#52635d;font-size:12px;font-weight:750}
       #vsp .vsp-flk-patient-picker select{width:100%;height:44px;padding:0 11px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#172522;font-size:16px}
       #vsp .vsp-flk-loading-check{display:flex;align-items:center;gap:7px;min-height:34px;padding:4px 8px;border:1px solid #d5dfda;border-radius:5px;background:#fff;color:#364a43;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer}
@@ -1296,12 +1301,12 @@
       #vsp #vsp-flk-add{height:44px;border:0;border-radius:5px;background:#315f51;color:#fff;font-weight:750;cursor:pointer}
       #vsp #vsp-flk-add:hover{background:#234d40}
       #vsp #vsp-flk-error{min-height:0!important;margin-top:7px!important;color:#9b3d32!important}
-      #vsp .vsp-flk-result{margin:0;padding:12px 2px 14px;border-bottom:1px solid #cbd7d1}
+      #vsp .vsp-flk-result{margin:0;padding:10px 2px 12px;border-bottom:2px solid #a5b8ae}
       #vsp .vsp-flk-result-title{display:flex;align-items:center;gap:8px;min-height:42px;color:#172522}
       #vsp .vsp-flk-title-spacer{flex:1;min-width:2px}
       #vsp .vsp-flk-bag{margin-top:4px;padding:9px 11px!important;border:1px solid #d9e2de;border-radius:5px;background:#eaf0ed!important}
       #vsp .vsp-flk-value-row{padding:6px 3px!important;border-color:#e2e9e6!important}
-      #vsp .vsp-flk-value-row strong{color:#33443e!important;font-size:15px!important}
+      #vsp .vsp-flk-value-row strong{color:#33443e!important;font-size:16px!important}
       #vsp .vsp-flk-rate{padding:8px 3px 2px!important}
       @media(max-width:520px){
         #vsp .vsp-header{gap:5px;padding-left:10px!important;padding-right:10px!important}
@@ -1310,7 +1315,9 @@
         #vsp [data-tab]{padding:7px 11px!important}
         #vsp .vsp-header-action{padding:6px 9px!important}
         #vsp .vsp-version{font-size:10px}
-        #vsp .vsp-body{padding-left:12px!important;padding-right:12px!important}
+        #vsp .vsp-body{padding-left:10px!important;padding-right:10px!important}
+        #vsp .vsp-list-controls{gap:8px 14px}
+        #vsp .vsp-time-filter select{max-width:144px;padding-right:20px;min-height:36px;font-size:14px}
         #vsp .vsp-flk-form{padding:11px!important}
         #vsp .vsp-flk-entry-row{grid-template-columns:minmax(0,1fr) 76px 60px;gap:6px}
         #vsp .vsp-patient{padding-left:9px!important;padding-right:8px!important}
@@ -1492,7 +1499,7 @@
         '<div class="vsp-changebar" style="margin:0 -16px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
         '<strong style="color:#92400e">[변경] ' + changedPatientIds.size + '명</strong><span style="flex:1"></span>' +
         '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #0f766e;border-radius:6px;background:#fff;color:#0f766e">변경 확인</button></div>' : '';
-      body.innerHTML = sortControl + timeControl + refresh + firstCheck + changes + (view ? ampuleHtml(view.snapshot) : '') + render(ordered, id);
+      body.innerHTML = '<div class="vsp-list-controls">' + sortControl + timeControl + '</div>' + refresh + firstCheck + changes + (view ? ampuleHtml(view.snapshot) : '') + render(ordered, id);
       const timeSelect = body.querySelector('#vsp-time');
       if (timeSelect) timeSelect.onchange = () => { selectedInjectionTime = timeSelect.value; paint(id, sections); };
       const persistReady = (records) => {

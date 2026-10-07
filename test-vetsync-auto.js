@@ -34,10 +34,13 @@ assert.strictEqual(sessionA.getItem('vetsync-panel-auto-open'), '1');
 assert.ok(Number(sessionA.getItem('vetsync-panel-auto-open-at')) > 0);
 assert.strictEqual(timers.length, 1);
 
-assert.match(source, /@version\s+2\.3\.1/);
+assert.match(source, /@version\s+2\.3\.2/);
 assert.match(source, /Fentanyl CRI/);
 assert.match(source, /max-width:520px/);
 assert.match(source, /font-size:16px/);
+assert.match(source, /vsp-volume\{font-size:20px/);
+assert.match(source, /vsp-list-controls/);
+assert.match(source, /vsp-cage\{display:inline-block;white-space:nowrap/);
 assert.match(source, /hospital-context/);
 assert.match(source, /_releases/);
 assert.match(source, /@inject-into\s+auto/);
