@@ -238,24 +238,30 @@ const readySnapshot = { checkedAt: '2026-10-07T06:00:00Z', patients: {
     calculation: { volume: .5, text: '0.50 mL', basis: '22 mpk · 150 mg/mL' },
   })]),
 } };
-const readyEntry = context.__test.preparationEntries(readySnapshot)[0];
-const readyRecords = { [readyEntry.id]: JSON.parse(JSON.stringify({ ...readyEntry,
-  patient: { ...readyEntry.patient, items: [] }, preparedAt: '2026-10-07T06:01:00Z',
-})) };
+readySnapshot.patients.ready.pid = 'ready';
+const readyEntries = context.__test.preparationEntries(readySnapshot);
+const readyEntry = readyEntries[0];
+const readyRecords = Object.fromEntries(readyEntries.map((entry) => [entry.id, JSON.parse(JSON.stringify({ ...entry,
+  patient: { ...entry.patient, items: [] }, preparedAt: '2026-10-07T06:01:00Z',
+}))]));
+readyRecords['@patient:ready'] = { pid: 'ready', completed: true, patient: { ...readyEntry.patient, items: [] } };
 const readySections = [{ heading: '주사', groups: [] }];
 readySections.snapshot = readySnapshot;
 readySections.previousSnapshot = JSON.parse(JSON.stringify(readySnapshot));
 readySections.states = {};
 let readyView = context.__test.injectionDisplay(readySections, '', readyRecords);
 let readyHtml = context.__test.render(readyView.display, 'inj');
-assert.match(readyHtml, /data-ready="[^"]+" checked/);
+assert.match(readyHtml, /data-patient-ready="ready" checked/);
 assert.doesNotMatch(readyHtml, /data-ready-confirm/);
-assert.strictEqual((readyHtml.match(/data-ready=/g) || []).length, 2);
+assert.strictEqual((readyHtml.match(/data-patient-ready=/g) || []).length, 1);
+assert.doesNotMatch(readyHtml, /data-ready=/);
+assert.match(readyHtml, /vsp-treatment-prepared/);
 readySections.snapshot = JSON.parse(JSON.stringify(readySnapshot));
 readySections.snapshot.patients.ready.items[0].calculation = { volume: .7, text: '0.70 mL', basis: '22 mpk · 150 mg/mL' };
 readyView = context.__test.injectionDisplay(readySections, '오늘|17', readyRecords);
 readyHtml = context.__test.render(readyView.display, 'inj');
-assert.match(readyHtml, /data-ready="[^"]+" checked/);
+assert.match(readyHtml, /data-patient-ready="ready" checked/);
+assert.doesNotMatch(readyHtml, /vsp-treatment-prepared/);
 assert.match(readyHtml, /data-ready-confirm/);
 assert.match(readyHtml, /vsp-ready-before">0.50 mL · IV/);
 assert.match(readyHtml, /vsp-ready-now">→ 0.70 mL · IV/);
@@ -271,13 +277,13 @@ readySections.previousSnapshot = JSON.parse(JSON.stringify(readySections.snapsho
 readySections.states = { ready: { discharged: true } };
 readyView = context.__test.injectionDisplay(readySections, '', readyRecords);
 readyHtml = context.__test.render(readyView.display, 'inj');
-assert.match(readyHtml, /data-ready="[^"]+" checked/);
+assert.match(readyHtml, /data-patient-ready="ready" checked/);
 assert.match(readyHtml, /data-ready-confirm/);
 assert.match(readyHtml, /vsp-ready-now">→ <s>0.50 mL · IV<\/s>/);
 assert.match(readyHtml, />퇴원<\/span>/);
 const removedObservation = readyView.observations.get(readyEntry.id);
 const acknowledged = JSON.parse(JSON.stringify(readyRecords));
-acknowledged[readyEntry.id].signature = removedObservation.signature;
+readyView.observations.forEach((observation, id) => { acknowledged[id].signature = observation.signature; });
 assert.doesNotMatch(context.__test.render(context.__test.injectionDisplay(readySections, '', acknowledged).display, 'inj'), /data-ready-confirm/);
 assert.strictEqual(context.__test.filterInjectionSnapshot(readySnapshot, '내일|1').patients.ready.items[0].times[0].hour, 1);
 const movedSections = [{ heading: '주사', groups: [] }];
@@ -286,7 +292,7 @@ Object.assign(movedSections, { snapshot: JSON.parse(JSON.stringify(readySnapshot
 movedSections.snapshot.patients.ready.items[0].times[0] = { tag: '오늘', hour: 21, order: 21, cancelled: false };
 const movedView = context.__test.injectionDisplay(movedSections, '', readyRecords);
 const movedHtml = context.__test.render(movedView.display, 'inj');
-assert.match(movedHtml, /data-ready="[^"]+" checked/);
+assert.match(movedHtml, /data-patient-ready="ready" checked/);
 assert.match(movedHtml, /data-ready-confirm/);
 assert.ok(movedView.observations.get(readyEntry.id).inactive);
 const newTimeEntry = [...movedView.entries.values()].find((entry) => entry.time.hour === 21);
@@ -299,6 +305,19 @@ const duplicateSnapshot = JSON.parse(JSON.stringify(readySnapshot));
 duplicateSnapshot.patients.ready.items.push(JSON.parse(JSON.stringify(duplicateSnapshot.patients.ready.items[0])));
 const duplicateEntries = context.__test.preparationEntries(duplicateSnapshot);
 assert.strictEqual(new Set(duplicateEntries.map((entry) => entry.id)).size, 4);
+const addedSections = [{ heading: '주사', groups: [] }];
+const addedSnapshot = JSON.parse(JSON.stringify(readySnapshot));
+addedSnapshot.patients.ready.items.push(item('Maropitant', '1mpk', 'SC', [['오늘', 21, 21]], {
+  calculation: { volume: .34, text: '0.34 mL', basis: '1 mpk · 10 mg/mL' },
+}));
+Object.assign(addedSections, { snapshot: addedSnapshot, previousSnapshot: addedSnapshot, states: {} });
+const addedView = context.__test.injectionDisplay(addedSections, '', readyRecords);
+assert.ok(addedView.display[0].groups[0].prepared);
+assert.deepStrictEqual(Array.from(addedView.display[0].groups[0].preparationChanged, Boolean), [false, true]);
+assert.strictEqual((context.__test.render(addedView.display, 'inj').match(/data-patient-ready=/g) || []).length, 1);
+assert.ok(addedView.display[0].groups[0].readyChanged);
+const noReady = context.__test.injectionDisplay(addedSections, '', {});
+assert.doesNotMatch(context.__test.render(noReady.display, 'inj'), /vsp-treatment-prepared/);
 
 context.__test.yesterdayWeights('2026-09-12', ['previous-weight']).then((weights) => {
   assert.strictEqual(weights.get('previous-weight'), '5.15 kg');

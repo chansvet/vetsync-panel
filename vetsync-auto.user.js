@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.3.0
+// @version      2.3.1
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -1005,14 +1005,33 @@
     const loadReady = (date) => {
     try {
     const records = JSON.parse(localStorage.getItem(readyKey(date))) || {};
-    return Object.fromEntries(Object.entries(records).filter(([, record]) =>
-    record && record.pid && record.patient && record.item && record.time && typeof record.signature === 'string'));
+    const valid = Object.fromEntries(Object.entries(records).filter(([, record]) =>
+    record && record.pid && record.patient && (record.completed === true ||
+    (record.item && record.time && typeof record.signature === 'string'))));
+    const baseline = loadBaseline(date);
+    if (baseline) {
+    const entries = preparationEntries(baseline);
+    Object.entries(baseline.patients).forEach(([pid, patient]) => {
+    const active = entries.filter((entry) => entry.pid === pid && !entry.time.cancelled && !entry.item.conditional);
+    if (!valid[patientReadyKey(pid)] && active.length && active.every((entry) => valid[entry.id])) {
+    valid[patientReadyKey(pid)] = { pid, patient: { ...patient, items: [] }, completed: true };
+    saveReady(date, valid);
+    }
+    });
+    }
+    return valid;
     }
     catch (_) { return {}; }
     };
     const saveReady = (date, records) => {
     try { localStorage.setItem(readyKey(date), JSON.stringify(records)); return true; }
     catch (_) { return false; }
+    };
+    const patientReadyKey = (pid) => '@patient:' + pid;
+    const isPatientReady = (pid, records, entries) => {
+    if (records[patientReadyKey(pid)]?.completed) return true;
+    const active = [...entries.values()].filter((entry) => entry.pid === pid && !entry.time.cancelled && !entry.item.conditional);
+    return active.length > 0 && active.every((entry) => !!records[entry.id]);
     };
     const preparationSignature = (item, time, removed = false) => JSON.stringify({
     drug: item.match, dose: item.dose, route: item.route,
@@ -1060,6 +1079,7 @@
     const previous = filterInjectionSnapshot(sections.previousSnapshot, '');
     const entries = new Map(preparationEntries(current).map((entry) => [entry.id, entry]));
     Object.entries(records).forEach(([id, record]) => {
+    if (record.completed) return;
     if (entries.has(id)) return;
     const oldPatient = previous.patients[record.pid];
     if (oldPatient?.items.some((item) => item.times.some((time) => time.preparationId === id))) return;
@@ -1081,18 +1101,22 @@
     const observations = new Map();
     display.forEach((section) => section.groups.forEach((group) => {
     group.updated = sections.some((original) => original.groups.some((patient) => patient.pid === group.pid && patient.updated));
-    group.preparationHtml = group.preparationRows.map(({ item, removed, previous: prior }) => {
+    group.prepared = isPatientReady(group.pid, records, entries);
+    group.preparationChanged = [];
+    group.preparationHtml = group.preparationRows.map(({ item, removed, previous: prior }, index) => {
+    const changeGroups = new Map();
     const slots = item.times.map((time) => ({ item, time, removed }));
     if (prior) prior.times.filter((time) => !item.times.some((now) => timeKey(now) === timeKey(time)))
     .forEach((time) => slots.push({ item: prior, time, removed: true }));
-    return '<div class="vsp-ready-row">' + slots.sort((a, b) => a.time.order - b.time.order).map(({ item, time, removed }) => {
+    slots.sort((a, b) => a.time.order - b.time.order).forEach(({ item, time, removed }) => {
     const id = time.preparationId;
     const record = records[id];
     const inactive = removed || time.cancelled;
     const signature = preparationSignature(item, time, removed);
     observations.set(id, { item, time, signature, inactive, pid: group.pid });
-    const changed = !!record && record.signature !== signature;
-    if (changed) { group.updated = true; group.readyChanged = true; }
+    const changed = record ? record.signature !== signature : group.prepared && !inactive && !item.conditional;
+    if (!changed) return;
+    group.updated = true; group.readyChanged = true; group.preparationChanged[index] = true;
     const label = (time.tag === '내일' ? '내일 ' : '') + time.hour + '시';
     const description = (value, other) => {
     const basis = value.calculation?.basis || value.dose || '';
@@ -1101,16 +1125,20 @@
     value.note !== other.note ? value.note : '',
     value.instruction !== other.instruction ? value.instruction : ''].filter(Boolean).join(' · ');
     };
-    return '<div class="vsp-ready-slot' + (changed ? ' vsp-ready-changed' : '') + '">' +
-    '<label><input type="checkbox" data-ready="' + encodeURIComponent(id) + '" ' +
-    (record ? 'checked ' : '') + (inactive && !record ? 'disabled ' : '') +
-    'aria-label="' + esc(item.drug + ' ' + label + ' 준비 완료').replace(/"/g, '&quot;') + '">' +
-    (inactive ? '<s>' + esc(label) + ' 준비</s>' : esc(label) + ' 준비') + '</label>' +
-    (changed ? '<span class="vsp-ready-before">' + esc(description(record.item, item)) + '</span>' +
-    '<span class="vsp-ready-now">→ ' + (inactive ? '<s>' + esc(description(item, record.item)) + '</s>' : esc(description(item, record.item))) + '</span>' +
-    '<button title="준비한 주사를 현재 오더와 대조한 뒤 확인" data-ready-confirm="' + encodeURIComponent(id) + '">변경 확인</button>' : '') +
-    '</div>';
-    }).join('') + '</div>';
+    const before = record ? description(record.item, item) : '';
+    const after = description(item, record?.item || item);
+    const key = JSON.stringify([before, after, inactive]);
+    if (!changeGroups.has(key)) changeGroups.set(key, { before, after, inactive, labels: [], ids: [] });
+    const change = changeGroups.get(key);
+    change.labels.push(label); change.ids.push(id);
+    });
+    const changes = [...changeGroups.values()].map((change) =>
+    '<div class="vsp-ready-slot vsp-ready-changed"><span>' + esc(change.labels.join(', ')) + '</span>' +
+    (change.before ? '<span class="vsp-ready-before">' + esc(change.before) + '</span>' : '') +
+    '<span class="vsp-ready-now">' + (change.before ? '→ ' : '') +
+    (change.inactive ? '<s>' + esc(change.after) + '</s>' : esc(change.after)) + '</span>' +
+    '<button title="준비한 주사를 현재 오더와 대조한 뒤 확인" data-ready-confirm="' + encodeURIComponent(JSON.stringify(change.ids)) + '">변경 확인</button></div>').join('');
+    return changes ? '<div class="vsp-ready-row">' + changes + '</div>' : '';
     });
     }));
     return { display, snapshot: current, entries, observations };
@@ -1292,16 +1320,19 @@
     (s.groups.length ? s.groups.map((g) => {
     const showManualWeight = !!(g.manualWeightNeeded && !shownManualWeights.has(g.pid));
     if (showManualWeight) shownManualWeights.add(g.pid);
-    return '<div class="vsp-patient' + (injectionView ? ' vsp-injection-patient' : '') + (g.updated ? ' vsp-patient-updated' : '') + '" style="' + patientRule +
+    return '<div class="vsp-patient' + (injectionView ? ' vsp-injection-patient' : '') + (g.updated ? ' vsp-patient-updated' : '') + (g.prepared ? ' vsp-patient-ready' : '') + '" style="' + patientRule +
     (g.updated ? 'border-left:3px solid #64748b;padding-left:10px;' : '') + '">' +
-    (g.title ? '<div class="vsp-patient-title" style="font-weight:700;font-size:16px;line-height:1.45">' + patientTitleHtml(g.title, g.previousWeight, showManualWeight, g.manualWeight, g.pid) +
+    (g.title ? '<div class="vsp-patient-title" style="font-weight:700;font-size:16px;line-height:1.45">' +
+    (typeof g.prepared === 'boolean' ? '<label class="vsp-patient-ready-control" title="환자 주사 준비 완료"><input type="checkbox" data-patient-ready="' + encodeURIComponent(g.pid) + '" ' +
+    (g.prepared ? 'checked ' : '') + 'aria-label="' + esc(g.sortName + ' 주사 준비 완료').replace(/"/g, '&quot;') + '"></label>' : '') +
+    patientTitleHtml(g.title, g.previousWeight, showManualWeight, g.manualWeight, g.pid) +
     ' <span style="font-weight:400;color:#6b7280">' + esc(g.cage) + '</span>' +
     (g.status ? ' <span class="vsp-status vsp-status-' + (g.status === '연장' ? 'extended' : g.status === '미연장' ? 'not-extended' : 'discharged') + '" style="display:inline-block;white-space:nowrap;padding:0 5px;border-radius:3px;font-size:13px;font-weight:800;' +
     (g.status === '연장' ? 'background:#fef08a;color:#713f12' :
     g.status === '미연장' ? 'background:#f3f4f6;color:#4b5563;border:1px solid #d1d5db' :
     'background:#fef2f2;color:#b42318;border:1px solid #fecaca;text-decoration:line-through') + '">' + esc(g.status) + '</span>' : '') +
     (g.updated ? ' <span class="vsp-updated-tag" style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #f59e0b;border-radius:3px;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800">[변경]</span>' : '') + '</div>' : '') +
-    g.body.map((b, index) => '<div class="vsp-treatment" style="padding:' + (index ? '6px' : '5px') + ' 0 ' + (injectionView ? '3px' : '5px') + ';font-size:15px;font-weight:500;line-height:1.5;' +
+    g.body.map((b, index) => '<div class="vsp-treatment' + (g.prepared && !g.preparationChanged?.[index] ? ' vsp-treatment-prepared' : '') + '" style="padding:' + (index ? '6px' : '5px') + ' 0 ' + (injectionView ? '3px' : '5px') + ';font-size:15px;font-weight:500;line-height:1.5;' +
     (index ? 'border-top:1px solid #e5e7eb;' : '') + '">' + toHtml(b) + (g.preparationHtml?.[index] || '') + '</div>').join('') +
     (g.note ? '<div class="vsp-patient-note" style="margin-top:4px;color:#475569;font-weight:600">' + esc(g.note) + '</div>' : '') +
     '</div>';
@@ -1382,7 +1413,7 @@
     '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="vsp-brand">VETSYNC</span>' +
     '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.3.0</span>' +
+    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.3.1</span>' +
     '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
     '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1427,6 +1458,12 @@
     #vsp .vsp-time-filter{display:flex;align-items:center;gap:10px;margin:10px 0;color:#53635e;font-size:13px;font-weight:700}
     #vsp .vsp-time-filter select{min-height:40px;padding:6px 30px 6px 10px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#253632;font:inherit;font-size:16px}
     #vsp .vsp-ready-row{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px}
+    #vsp .vsp-treatment-prepared{opacity:.5}
+    #vsp .vsp-patient-ready:not(.vsp-patient-updated){background:#edf1ef;border-left-color:#c6d1cb!important}
+    #vsp .vsp-patient-ready:not(.vsp-patient-updated) .vsp-patient-title{color:#64746c}
+    #vsp .vsp-patient-ready-control{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;width:32px;height:36px;margin-right:3px;cursor:pointer}
+    #vsp .vsp-patient-ready-control input{appearance:none;-webkit-appearance:none;width:19px;height:19px;position:relative;border:1px solid #8da297;border-radius:3px;background:#fff;margin:0;cursor:pointer}
+    #vsp .vsp-patient-ready-control input:checked:after{content:"";position:absolute;left:5px;top:2px;width:5px;height:9px;border:solid #315f51;border-width:0 2px 2px 0;transform:rotate(45deg)}
     #vsp .vsp-ready-slot{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px;max-width:100%;font-size:12px;color:#53635e}
     #vsp .vsp-ready-slot label{display:flex;align-items:center;gap:6px;min-height:40px;cursor:pointer;white-space:nowrap}
     #vsp .vsp-ready-slot input{appearance:none;-webkit-appearance:none;width:18px;height:18px;flex:none;position:relative;border:1px solid #a9b8b0;border-radius:3px;background:#fff;margin:0}
@@ -1637,7 +1674,7 @@
     if (view) {
     [sections.snapshot, sections.previousSnapshot].forEach((snapshot) => preparationEntries(snapshot)
     .forEach(({ time }) => availableTimes.set(timeKey(time), time)));
-    Object.values(ready).forEach(({ time }) => availableTimes.set(timeKey(time), time));
+    Object.values(ready).filter((record) => record.time).forEach(({ time }) => availableTimes.set(timeKey(time), time));
     }
     const timeControl = view ? '<label class="vsp-time-filter">시간 <select id="vsp-time" aria-label="주사 시간 선택">' +
     '<option value="">전체</option>' + [...availableTimes].sort((a, b) => a[1].order - b[1].order)
@@ -1657,29 +1694,39 @@
     if (!saveReady(date, records)) alert('준비 기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.');
     paint(id, sections);
     };
-    body.querySelectorAll('[data-ready]').forEach((checkbox) => {
+    body.querySelectorAll('[data-patient-ready]').forEach((checkbox) => {
     checkbox.onchange = () => {
-    const key = decodeURIComponent(checkbox.dataset.ready);
+    const pid = decodeURIComponent(checkbox.dataset.patientReady);
     const records = loadReady(date);
-    const fresh = injectionDisplay(sections, selectedInjectionTime, records);
-    const entry = fresh.entries.get(key);
-    if (!checkbox.checked) delete records[key];
-    else if (entry && !entry.time.cancelled) records[key] = {
-    pid: entry.pid, patient: { ...entry.patient, items: [] },
-    item: { ...entry.item, times: [entry.time] }, time: entry.time,
-    signature: entry.signature, preparedAt: new Date().toISOString(),
-    };
+    Object.keys(records).filter((key) => records[key].pid === pid).forEach((key) => delete records[key]);
+    const fresh = injectionDisplay(sections, '', records);
+    if (checkbox.checked) {
+    const patient = sections.snapshot.patients[pid];
+    if (!patient) { paint(id, sections); return; }
+    const preparedAt = new Date().toISOString();
+    records[patientReadyKey(pid)] = { pid, patient: { ...patient, items: [] }, completed: true, preparedAt };
+    fresh.entries.forEach((entry) => {
+    if (entry.pid !== pid || entry.time.cancelled || entry.item.conditional) return;
+    records[entry.id] = { pid, patient: { ...entry.patient, items: [] },
+    item: { ...entry.item, times: [entry.time] }, time: entry.time, signature: entry.signature, preparedAt };
+    });
+    }
     persistReady(records);
     };
     });
     body.querySelectorAll('[data-ready-confirm]').forEach((button) => {
     button.onclick = () => {
-    const key = decodeURIComponent(button.dataset.readyConfirm);
+    const keys = JSON.parse(decodeURIComponent(button.dataset.readyConfirm));
     const records = loadReady(date);
-    const observation = injectionDisplay(sections, selectedInjectionTime, records).observations.get(key);
-    if (!records[key] || !observation) return;
-    records[key] = { ...records[key], item: { ...observation.item, times: [observation.time] },
+    const fresh = injectionDisplay(sections, selectedInjectionTime, records);
+    keys.forEach((key) => {
+    const observation = fresh.observations.get(key);
+    if (!observation || (!records[key] && !records[patientReadyKey(observation.pid)])) return;
+    const entry = fresh.entries.get(key);
+    records[key] = { ...(records[key] || { pid: observation.pid,
+    patient: { ...entry.patient, items: [] }, preparedAt: new Date().toISOString() }), item: { ...observation.item, times: [observation.time] },
     time: observation.time, signature: observation.signature, confirmedAt: new Date().toISOString() };
+    });
     persistReady(records);
     };
     });

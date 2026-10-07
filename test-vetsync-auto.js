@@ -34,7 +34,7 @@ assert.strictEqual(sessionA.getItem('vetsync-panel-auto-open'), '1');
 assert.ok(Number(sessionA.getItem('vetsync-panel-auto-open-at')) > 0);
 assert.strictEqual(timers.length, 1);
 
-assert.match(source, /@version\s+2\.3\.0/);
+assert.match(source, /@version\s+2\.3\.1/);
 assert.match(source, /Fentanyl CRI/);
 assert.match(source, /max-width:520px/);
 assert.match(source, /font-size:16px/);
