@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.2.5
+// @version      2.3.0
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -956,7 +956,7 @@
     const currentItems = now ? now.items : [];
     const oldItems = old ? old.items : [];
     const used = new Set();
-    const lines = [], conds = [];
+    const lines = [], conds = [], lineItems = [], condItems = [];
     currentItems.forEach((item) => {
     let pi = oldItems.findIndex((candidate, i) => !used.has(i) && candidate.match === item.match && sameItem(candidate, item));
     if (pi < 0) pi = oldItems.findIndex((candidate, i) => !used.has(i) && candidate.match === item.match);
@@ -969,6 +969,7 @@
     }
     const line = changedItem(item, prev, prev ? 'changed' : 'added');
     (item.conditional ? conds : lines).push(line);
+    (item.conditional ? condItems : lineItems).push({ item, removed: false, previous: prev });
     });
     oldItems.forEach((item, i) => {
     if (used.has(i)) return;
@@ -977,6 +978,7 @@
     patientKinds.removed = true;
     const line = changedItem(item, null, 'removed');
     (item.conditional ? conds : lines).push(line);
+    (item.conditional ? condItems : lineItems).push({ item, removed: true });
     });
     const updated = events > priorEvents;
     if (updated) {
@@ -987,18 +989,132 @@
     updated,
     title, pid: p.pid, weight: p.weight, previousWeight: weightChanged ? old.weight : '',
     manualWeightNeeded: !!now?.manualWeightNeeded, manualWeight: now?.manualWeight || '', cage: p.cage, status,
-    sortName: p.name, sortCage: p.cage, body: lines, note: '',
+    sortName: p.name, sortCage: p.cage, body: lines, preparationRows: lineItems, note: '',
     });
     if (conds.length) cond.push({
     updated: updated && !lines.length,
     title, pid: p.pid, weight: p.weight, previousWeight: weightChanged ? old.weight : '',
     manualWeightNeeded: !!now?.manualWeightNeeded, manualWeight: now?.manualWeight || '', cage: p.cage, status,
-    sortName: p.name, sortCage: p.cage, body: conds, note: '',
+    sortName: p.name, sortCage: p.cage, body: conds, preparationRows: condItems, note: '',
     });
     });
     return { normal, cond, changes: changedPatients, changeKinds };
     }
     const baselineKey = (date) => INJ_BASELINE + currentHospitalId() + ':' + date;
+    const readyKey = (date) => 'vetsync-prepared-v1:' + currentHospitalId() + ':' + date;
+    const loadReady = (date) => {
+    try {
+    const records = JSON.parse(localStorage.getItem(readyKey(date))) || {};
+    return Object.fromEntries(Object.entries(records).filter(([, record]) =>
+    record && record.pid && record.patient && record.item && record.time && typeof record.signature === 'string'));
+    }
+    catch (_) { return {}; }
+    };
+    const saveReady = (date, records) => {
+    try { localStorage.setItem(readyKey(date), JSON.stringify(records)); return true; }
+    catch (_) { return false; }
+    };
+    const preparationSignature = (item, time, removed = false) => JSON.stringify({
+    drug: item.match, dose: item.dose, route: item.route,
+    volume: item.calculation?.volume ?? null, basis: item.calculation?.basis || '',
+    calculationText: item.calculation?.text || '', doseConflict: item.doseConflict || false,
+    dilution: item.dilution || null, note: item.note, instruction: item.instruction,
+    conditional: item.conditional, cancelled: !!time.cancelled || removed,
+    });
+    const preparationEntries = (snapshot) => {
+    const entries = [];
+    Object.entries(snapshot.patients).forEach(([pid, patient]) => {
+    const counts = new Map();
+    patient.items.forEach((item) => item.times.forEach((time) => {
+    const base = JSON.stringify([pid, item.match, timeKey(time)]);
+    const ordinal = counts.get(base) || 0;
+    counts.set(base, ordinal + 1);
+    const id = JSON.stringify([pid, item.match, timeKey(time), ordinal]);
+    time.preparationId = id;
+    entries.push({ id, pid, patient, item, time, signature: preparationSignature(item, time) });
+    }));
+    });
+    return entries;
+    };
+    const filterInjectionSnapshot = (snapshot, selectedTime) => {
+    const copy = JSON.parse(JSON.stringify(snapshot));
+    preparationEntries(copy);
+    Object.entries(copy.patients).forEach(([pid, patient]) => {
+    patient.items = patient.items.map((item) => ({ ...item,
+    times: item.times.filter((time) => !selectedTime || timeKey(time) === selectedTime),
+    })).filter((item) => item.times.length);
+    if (!patient.items.length) delete copy.patients[pid];
+    });
+    return copy;
+    };
+    const readyAmount = (item) => {
+    const calc = item.calculation;
+    let amount = calc?.text || item.dose || '용량 확인 필요';
+    if (calc?.volume != null && item.dilution?.valid !== false && item.dilution?.nsRatio) {
+    amount += ' + NS ' + volumeText(calc.volume * item.dilution.nsRatio) + ' mL';
+    }
+    return [amount, item.route].filter(Boolean).join(' · ');
+    };
+    function injectionDisplay(sections, selectedTime, records) {
+    const current = filterInjectionSnapshot(sections.snapshot, '');
+    const previous = filterInjectionSnapshot(sections.previousSnapshot, '');
+    const entries = new Map(preparationEntries(current).map((entry) => [entry.id, entry]));
+    Object.entries(records).forEach(([id, record]) => {
+    if (entries.has(id)) return;
+    const oldPatient = previous.patients[record.pid];
+    if (oldPatient?.items.some((item) => item.times.some((time) => time.preparationId === id))) return;
+    const patient = previous.patients[record.pid] ||= { ...record.patient, items: [] };
+    patient.items.push({ ...record.item, times: [{ ...record.time, preparationId: id }] });
+    });
+    const select = (snapshot) => {
+    Object.entries(snapshot.patients).forEach(([pid, patient]) => {
+    patient.items = patient.items.map((item) => ({ ...item,
+    times: item.times.filter((time) => !selectedTime || timeKey(time) === selectedTime),
+    })).filter((item) => item.times.length);
+    if (!patient.items.length) delete snapshot.patients[pid];
+    });
+    return snapshot;
+    };
+    const compared = compareSnapshot(select(current), select(previous), sections.states);
+    const display = [{ ...sections[0], groups: compared.normal }];
+    if (compared.cond.length) display.push({ heading: '조건부', groups: compared.cond });
+    const observations = new Map();
+    display.forEach((section) => section.groups.forEach((group) => {
+    group.updated = sections.some((original) => original.groups.some((patient) => patient.pid === group.pid && patient.updated));
+    group.preparationHtml = group.preparationRows.map(({ item, removed, previous: prior }) => {
+    const slots = item.times.map((time) => ({ item, time, removed }));
+    if (prior) prior.times.filter((time) => !item.times.some((now) => timeKey(now) === timeKey(time)))
+    .forEach((time) => slots.push({ item: prior, time, removed: true }));
+    return '<div class="vsp-ready-row">' + slots.sort((a, b) => a.time.order - b.time.order).map(({ item, time, removed }) => {
+    const id = time.preparationId;
+    const record = records[id];
+    const inactive = removed || time.cancelled;
+    const signature = preparationSignature(item, time, removed);
+    observations.set(id, { item, time, signature, inactive, pid: group.pid });
+    const changed = !!record && record.signature !== signature;
+    if (changed) { group.updated = true; group.readyChanged = true; }
+    const label = (time.tag === '내일' ? '내일 ' : '') + time.hour + '시';
+    const description = (value, other) => {
+    const basis = value.calculation?.basis || value.dose || '';
+    const otherBasis = other.calculation?.basis || other.dose || '';
+    return [readyAmount(value), basis !== otherBasis ? basis : '',
+    value.note !== other.note ? value.note : '',
+    value.instruction !== other.instruction ? value.instruction : ''].filter(Boolean).join(' · ');
+    };
+    return '<div class="vsp-ready-slot' + (changed ? ' vsp-ready-changed' : '') + '">' +
+    '<label><input type="checkbox" data-ready="' + encodeURIComponent(id) + '" ' +
+    (record ? 'checked ' : '') + (inactive && !record ? 'disabled ' : '') +
+    'aria-label="' + esc(item.drug + ' ' + label + ' 준비 완료').replace(/"/g, '&quot;') + '">' +
+    (inactive ? '<s>' + esc(label) + ' 준비</s>' : esc(label) + ' 준비') + '</label>' +
+    (changed ? '<span class="vsp-ready-before">' + esc(description(record.item, item)) + '</span>' +
+    '<span class="vsp-ready-now">→ ' + (inactive ? '<s>' + esc(description(item, record.item)) + '</s>' : esc(description(item, record.item))) + '</span>' +
+    '<button title="준비한 주사를 현재 오더와 대조한 뒤 확인" data-ready-confirm="' + encodeURIComponent(id) + '">변경 확인</button>' : '') +
+    '</div>';
+    }).join('') + '</div>';
+    });
+    }));
+    return { display, snapshot: current, entries, observations };
+    }
     const checkedTime = (value) => {
     if (!value) return '시간 미기록';
     const date = new Date(value);
@@ -1186,7 +1302,7 @@
     'background:#fef2f2;color:#b42318;border:1px solid #fecaca;text-decoration:line-through') + '">' + esc(g.status) + '</span>' : '') +
     (g.updated ? ' <span class="vsp-updated-tag" style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #f59e0b;border-radius:3px;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800">[변경]</span>' : '') + '</div>' : '') +
     g.body.map((b, index) => '<div class="vsp-treatment" style="padding:' + (index ? '6px' : '5px') + ' 0 ' + (injectionView ? '3px' : '5px') + ';font-size:15px;font-weight:500;line-height:1.5;' +
-    (index ? 'border-top:1px solid #e5e7eb;' : '') + '">' + toHtml(b) + '</div>').join('') +
+    (index ? 'border-top:1px solid #e5e7eb;' : '') + '">' + toHtml(b) + (g.preparationHtml?.[index] || '') + '</div>').join('') +
     (g.note ? '<div class="vsp-patient-note" style="margin-top:4px;color:#475569;font-weight:600">' + esc(g.note) + '</div>' : '') +
     '</div>';
     }).join('') : '<p style="color:#6b7280">해당 항목이 없습니다.</p>')
@@ -1266,7 +1382,7 @@
     '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="vsp-brand">VETSYNC</span>' +
     '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.2.5</span>' +
+    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.3.0</span>' +
     '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
     '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1308,6 +1424,19 @@
     #vsp [data-sort]{min-height:36px;padding:5px 12px!important;border:0!important;border-radius:4px!important;background:transparent!important;color:#41544c!important}
     #vsp [data-sort][aria-pressed="true"]{background:#315f51!important;color:#fff!important}
     #vsp #vsp-refresh{min-height:40px;padding:6px 12px!important;border-color:#bdcbc4!important;border-radius:5px!important;color:#315f51}
+    #vsp .vsp-time-filter{display:flex;align-items:center;gap:10px;margin:10px 0;color:#53635e;font-size:13px;font-weight:700}
+    #vsp .vsp-time-filter select{min-height:40px;padding:6px 30px 6px 10px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#253632;font:inherit;font-size:16px}
+    #vsp .vsp-ready-row{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px}
+    #vsp .vsp-ready-slot{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px;max-width:100%;font-size:12px;color:#53635e}
+    #vsp .vsp-ready-slot label{display:flex;align-items:center;gap:6px;min-height:40px;cursor:pointer;white-space:nowrap}
+    #vsp .vsp-ready-slot input{appearance:none;-webkit-appearance:none;width:18px;height:18px;flex:none;position:relative;border:1px solid #a9b8b0;border-radius:3px;background:#fff;margin:0}
+    #vsp .vsp-ready-slot input:checked:after{content:"";position:absolute;left:5px;top:2px;width:5px;height:9px;border:solid #315f51;border-width:0 2px 2px 0;transform:rotate(45deg)}
+    #vsp .vsp-ready-slot input:disabled{opacity:.4;cursor:default}
+    #vsp .vsp-ready-changed{padding:0 7px;border-left:2px solid #bd7b28;background:#fff4df;color:#84561d}
+    #vsp .vsp-ready-before{color:#8a3d31;text-decoration:line-through;overflow-wrap:anywhere}
+    #vsp .vsp-ready-now{font-weight:700;overflow-wrap:anywhere}
+    #vsp .vsp-ready-slot button{min-height:40px;border:1px solid #e4c38e;border-radius:4px;padding:4px 8px;background:#fff;color:#84561d;font:inherit}
+    #vsp .vsp-ready-slot input:focus-visible,#vsp .vsp-ready-slot button:focus-visible,#vsp #vsp-time:focus-visible{outline:2px solid #315f51;outline-offset:3px}
     #vsp .vsp-first-check{padding:9px 12px!important;border:1px solid #d4e2d9!important;background:#eef4f0!important;color:#3e6654!important}
     #vsp .vsp-changebar{padding:10px 12px!important;border:1px solid #e5d5b8!important;background:#fff8eb!important}
     #vsp #vsp-accept{min-height:40px;padding:7px 12px!important;border-color:#91aa9d!important;border-radius:5px!important;color:#315f51}
@@ -1354,6 +1483,7 @@
     let text = '';
     let requestId = 0;
     let sortMode = 'name';
+    let selectedInjectionTime = '';
     const flkStateKey = 'vetsync-flk-state-v1';
     const todayKey = ymd(new Date());
     let savedFlkState = null;
@@ -1477,8 +1607,19 @@
     const paint = (id, sections) => {
     const body = box.querySelector('#vsp-body');
     if (!body) return;
-    const ordered = sortSections(sections, sortMode);
-    const prep = id === 'inj' && sections.snapshot ? preparationText(sections.snapshot) : '';
+    const date = ymd(new Date(sections.snapshot?.checkedAt || Date.now()));
+    const ready = id === 'inj' ? loadReady(date) : {};
+    const view = id === 'inj' ? injectionDisplay(sections, selectedInjectionTime, ready) : null;
+    const changedPatientIds = new Set();
+    if (view) {
+    sections.forEach((section) => section.groups.filter((group) => group.updated)
+    .forEach((group) => changedPatientIds.add(group.pid)));
+    const allTimes = selectedInjectionTime ? injectionDisplay(sections, '', ready) : view;
+    allTimes.display.forEach((section) => section.groups.filter((group) => group.readyChanged)
+    .forEach((group) => changedPatientIds.add(group.pid)));
+    }
+    const ordered = sortSections(view ? view.display : sections, sortMode);
+    const prep = view ? preparationText(view.snapshot) : '';
     text = (prep ? prep + '\n\n' : '') + asText(ordered);
     const sortControl =
     '<div class="vsp-sortbar" style="margin:0 -16px;padding:9px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px">' +
@@ -1492,14 +1633,56 @@
     '<div class="vsp-refresh-row" style="margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
     '<button id="vsp-refresh" style="font:inherit;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff">새로 확인</button>' +
     '<span style="font-size:13px;color:#64748b;font-weight:600">' + esc(sections[0].reviewNote || '현재 확인 시간 미기록') + '</span></div>' : '';
+    const availableTimes = new Map();
+    if (view) {
+    [sections.snapshot, sections.previousSnapshot].forEach((snapshot) => preparationEntries(snapshot)
+    .forEach(({ time }) => availableTimes.set(timeKey(time), time)));
+    Object.values(ready).forEach(({ time }) => availableTimes.set(timeKey(time), time));
+    }
+    const timeControl = view ? '<label class="vsp-time-filter">시간 <select id="vsp-time" aria-label="주사 시간 선택">' +
+    '<option value="">전체</option>' + [...availableTimes].sort((a, b) => a[1].order - b[1].order)
+    .map(([key, time]) => '<option value="' + key + '"' + (key === selectedInjectionTime ? ' selected' : '') + '>' +
+    (time.tag === '내일' ? '내일 ' : '오늘 ') + time.hour + '시</option>').join('') + '</select></label>' : '';
     const firstCheck = id === 'inj' && sections.firstCheck ?
     '<div class="vsp-first-check" style="margin:0 -16px;padding:8px 16px;background:#ecfdf5;border-bottom:1px solid #a7f3d0;color:#065f46;font-weight:700">' +
     '오늘 첫 확인 · 기준 목록 저장됨</div>' : '';
-    const changes = id === 'inj' && sections.changeCount ?
+    const changes = id === 'inj' && changedPatientIds.size ?
     '<div class="vsp-changebar" style="margin:0 -16px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-    '<strong style="color:#92400e">[변경] ' + sections.changeCount + '명</strong><span style="flex:1"></span>' +
+    '<strong style="color:#92400e">[변경] ' + changedPatientIds.size + '명</strong><span style="flex:1"></span>' +
     '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #0f766e;border-radius:6px;background:#fff;color:#0f766e">변경 확인</button></div>' : '';
-    body.innerHTML = sortControl + refresh + firstCheck + changes + (id === 'inj' ? ampuleHtml(sections.snapshot) : '') + render(ordered, id);
+    body.innerHTML = sortControl + timeControl + refresh + firstCheck + changes + (view ? ampuleHtml(view.snapshot) : '') + render(ordered, id);
+    const timeSelect = body.querySelector('#vsp-time');
+    if (timeSelect) timeSelect.onchange = () => { selectedInjectionTime = timeSelect.value; paint(id, sections); };
+    const persistReady = (records) => {
+    if (!saveReady(date, records)) alert('준비 기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.');
+    paint(id, sections);
+    };
+    body.querySelectorAll('[data-ready]').forEach((checkbox) => {
+    checkbox.onchange = () => {
+    const key = decodeURIComponent(checkbox.dataset.ready);
+    const records = loadReady(date);
+    const fresh = injectionDisplay(sections, selectedInjectionTime, records);
+    const entry = fresh.entries.get(key);
+    if (!checkbox.checked) delete records[key];
+    else if (entry && !entry.time.cancelled) records[key] = {
+    pid: entry.pid, patient: { ...entry.patient, items: [] },
+    item: { ...entry.item, times: [entry.time] }, time: entry.time,
+    signature: entry.signature, preparedAt: new Date().toISOString(),
+    };
+    persistReady(records);
+    };
+    });
+    body.querySelectorAll('[data-ready-confirm]').forEach((button) => {
+    button.onclick = () => {
+    const key = decodeURIComponent(button.dataset.readyConfirm);
+    const records = loadReady(date);
+    const observation = injectionDisplay(sections, selectedInjectionTime, records).observations.get(key);
+    if (!records[key] || !observation) return;
+    records[key] = { ...records[key], item: { ...observation.item, times: [observation.time] },
+    time: observation.time, signature: observation.signature, confirmedAt: new Date().toISOString() };
+    persistReady(records);
+    };
+    });
     body.querySelectorAll('[data-sort]').forEach((button) => {
     button.onclick = () => { sortMode = button.dataset.sort; paint(id, sections); };
     });
@@ -1546,15 +1729,16 @@
     volume.style.color = result.volume == null ? '#b45309' : '#0f766e';
     basis.textContent = result.volume == null ? '' : result.basis + (nsText ? ' · 희석 NS 포함' : '');
     if (refreshLocalInjectionPatient(sections, String(manualBox.dataset.pid))) {
-    const prep = preparationText(sections.snapshot);
-    text = (prep ? prep + '\n\n' : '') + asText(sortSections(sections, sortMode));
+    const refreshedView = injectionDisplay(sections, selectedInjectionTime, loadReady(date));
+    const prep = preparationText(refreshedView.snapshot);
+    text = (prep ? prep + '\n\n' : '') + asText(sortSections(refreshedView.display, sortMode));
     const summary = body.querySelector('#vsp-prep-summary');
-    if (summary) summary.outerHTML = ampuleHtml(sections.snapshot);
+    if (summary) summary.outerHTML = ampuleHtml(refreshedView.snapshot);
     }
     };
     manualBox.querySelectorAll('input,select').forEach((control) => {
     control.addEventListener('input', update);
-    control.addEventListener('change', update);
+    control.addEventListener('change', () => { update(); paint(id, sections); });
     });
     update();
     });
