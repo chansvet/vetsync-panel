@@ -104,14 +104,30 @@ assert.equal(ctx.api.calculateFlk(9.8, true, 1.5), null);
 assert.equal(ctx.api.calculateFlk(Infinity), null);
 assert.equal(ctx.api.flkValues(10, 48, 2).valid, false);
 assert.equal(ctx.api.flkValues(10, 49, 2, false).valid, true);
+const example42 = ctx.api.calculateFlk(4.2);
+const example42Fast = ctx.api.calculateFlk(4.2, true, 1, 1.5);
+assert.equal(example42.bag, 58);
+assert.equal(example42Fast.bag, 87);
+assert.ok(Math.abs(example42.fentanyl - example42Fast.fentanyl) < 1e-12);
+assert.equal(ctx.api.calculateFlk(4.2, true, 1, 2), null);
+assert.equal(ctx.api.calculateFlk(4.2, false, 1, 2), null);
+assert.equal(ctx.api.calculateFlk(4.2, true, 2, 1.5), null);
 for (const weight of [0.1, 3.4, 9.8, 50, 80, 120]) {
   for (const includeLoading of [true, false]) for (const ampules of [1, 2, 3]) {
     const minimum = ctx.api.calculateFlk(weight, includeLoading, ampules);
     assert.ok(minimum && minimum.valid);
     if (minimum.rate > 1) assert.equal(ctx.api.calculateFlk(weight, includeLoading, ampules, minimum.rate - 0.5), null);
-    for (const rate of [minimum.rate, minimum.rate + 0.5, minimum.rate + 10]) {
+    for (let rate = minimum.rate; rate <= minimum.maximumRate + 1; rate += 0.5) {
       const result = ctx.api.calculateFlk(weight, includeLoading, ampules, rate);
+      if (!result) {
+        for (let bag = 1; bag <= (ampules > 1 ? 150 : 100); bag++) {
+          const alternative = ctx.api.flkValues(weight, bag, rate, includeLoading, ampules);
+          assert.ok(!alternative.valid || alternative.fentanyl + 1e-10 < minimum.fentanyl);
+        }
+        continue;
+      }
       assert.ok(result.valid && result.ns >= 0 && result.fentanylTotal < 10 * ampules);
+      assert.ok(result.fentanyl + 1e-10 >= minimum.fentanyl);
       assert.ok(Math.abs(result.fentanyl + result.lidocaine + result.ketamine + result.ns - result.bag) < 1e-10);
       assert.ok(result.bag === (ampules > 1 ? 150 : 100) || !ctx.api.flkValues(weight, result.bag + 1, rate, includeLoading, ampules).valid);
       assert.ok(Math.abs(result.fentanyl * .05 * rate / result.bag / weight - .002) < 1e-12);

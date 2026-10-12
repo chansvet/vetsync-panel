@@ -90,15 +90,14 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.locator('#vsp-flk-weight').fill('9.8');
     await page.getByRole('button', {name:'추가',exact:true}).click();
     assert.equal(await page.locator('[data-flk-rate="0"]').inputValue(), '1.5');
-    await page.getByRole('button', {name:'가상 환자 FLK 속도 늘리기',exact:true}).click();
+    await page.locator('[data-flk-rate="0"]').selectOption('2');
     assert.equal(await page.locator('[data-flk-rate="0"]').inputValue(), '2');
     assert.match(await page.locator('.vsp-flk-bag').innerText(), /49 mL/);
     await page.locator('#vsp-flk-name').fill('입력 중 "이름"');
     await page.locator('[data-flk-ampules="0"]').fill('2');
     await page.locator('[data-flk-ampules="0"]').dispatchEvent('change');
     assert.equal(await page.locator('#vsp-flk-name').inputValue(), '입력 중 "이름"');
-    await page.locator('[data-flk-rate="0"]').fill('3');
-    await page.locator('[data-flk-rate="0"]').dispatchEvent('change');
+    await page.locator('[data-flk-rate="0"]').selectOption('3');
     assert.match(await page.locator('.vsp-flk-bag').innerText(), /150 mL/);
     await page.locator('#vsp-flk-name').fill('대형 테스트');
     await page.locator('#vsp-flk-weight').fill('80');
@@ -111,19 +110,46 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     assert.equal(await page.locator('[data-flk-rate="0"]').inputValue(), '3');
     assert.equal(await page.locator('[data-flk-ampules="0"]').inputValue(), '2');
     assert.equal(await page.locator('[data-flk-loading="1"]').isChecked(), true);
-    await page.locator('[data-flk-rate="0"]').fill('1.7');
-    await page.locator('[data-flk-rate="0"]').dispatchEvent('change');
+    await page.locator('#vsp-flk-name').fill('4.2 kg 테스트');
+    await page.locator('#vsp-flk-weight').fill('4.2');
+    await page.getByRole('button', {name:'추가',exact:true}).click();
+    assert.deepEqual(await page.locator('[data-flk-rate="2"] option').evaluateAll((options) => options.map((o) => o.value)), ['1','1.5']);
+    await page.locator('[data-flk-rate="2"]').selectOption('1.5');
+    assert.match(await page.locator('.vsp-flk-result').nth(2).innerText(), /87 mL/);
+    await page.locator('[data-flk-ampules="2"]').fill('2');
+    await page.locator('[data-flk-ampules="2"]').dispatchEvent('change');
+    assert.deepEqual(await page.locator('[data-flk-rate="2"] option').evaluateAll((options) => options.map((o) => o.value)), ['1']);
+    assert.equal(await page.locator('[data-flk-rate="2"]').inputValue(), '1');
+    await page.locator('[data-flk-ampules="2"]').fill('1');
+    await page.locator('[data-flk-ampules="2"]').dispatchEvent('change');
+    // Repair a previously saved unrestricted rate without discarding any patient.
+    await page.evaluate(() => {
+      const state = JSON.parse(localStorage.getItem('vetsync-flk-state-v1'));
+      state.entries[2].rate = 2;
+      localStorage.setItem('vetsync-flk-state-v1', JSON.stringify(state));
+    });
+    await page.reload();
+    await page.getByRole('button', {name:'FLK',exact:true}).click();
+    assert.equal(await page.locator('.vsp-flk-result').count(), 3);
+    assert.equal(await page.locator('[data-flk-rate="2"]').inputValue(), '1');
     assert.equal(await page.locator('[data-flk-rate="0"]').inputValue(), '3');
-    assert.match(await page.locator('[data-flk-error="0"]').innerText(), /0.5/);
     for (const width of [320,390,1024]) {
       await page.setViewportSize({width,height:844});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No overflow at ' + width);
+      const controls = await page.locator('.vsp-flk-controls').first().evaluate((group) => {
+        return ['.vsp-flk-loading-check','[data-flk-rate]','.vsp-flk-stepper'].map((selector) => {
+          const {top,bottom,height} = group.querySelector(selector).getBoundingClientRect();
+          return {top,bottom,height};
+        });
+      });
+      assert.ok(controls.every((r) => r.height === 36 && Math.abs(r.top - controls[0].top) < 1 && Math.abs(r.bottom - controls[0].bottom) < 1), 'Aligned controls at ' + width);
     }
     await page.setViewportSize({width:390,height:844});
-    await page.locator('[data-flk-rate="0"]').dispatchEvent('change');
-    await page.screenshot({path:'/tmp/vetsync-flk-2.4-mobile.png',fullPage:true});
+    await page.locator('.vsp-flk-result').nth(2).scrollIntoViewIfNeeded();
+    await page.screenshot({path:'/tmp/vetsync-flk-2.4.2-mobile.png',fullPage:true});
     await page.setViewportSize({width:1024,height:768});
-    await page.screenshot({path:'/tmp/vetsync-flk-2.4-desktop.png',fullPage:true});
+    await page.locator('.vsp-flk-result').first().scrollIntoViewIfNeeded();
+    await page.screenshot({path:'/tmp/vetsync-flk-2.4.2-desktop.png',fullPage:true});
     assert.deepEqual(errors, []);
     console.log('FLK controls, per-patient persistence, stored strengths and mobile layout passed');
   } finally {
