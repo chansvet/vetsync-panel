@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.4.4
+// @version      2.4.5
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -1504,7 +1504,7 @@
     '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="vsp-brand">VETSYNC</span>' +
     '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.4</span>' +
+    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.5</span>' +
     '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
     '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1525,6 +1525,7 @@
     #vsp button{transition:background-color .14s ease,border-color .14s ease,color .14s ease}
     #vsp button:focus-visible,#vsp input:focus-visible,#vsp select:focus-visible{outline:3px solid #55aa98!important;outline-offset:2px}
     #vsp .vsp-body{width:min(100%,960px);margin:0 auto;padding:0 18px 28px!important;color:#172522}
+    #vsp .vsp-body.vsp-flk-body{width:min(100%,680px)}
     #vsp .vsp-section-heading{margin:16px 0 6px!important;padding:0 0 5px;border-bottom:1px solid #d7e0dc;color:#53635e!important;font-size:14px!important;font-weight:700;letter-spacing:0}
     #vsp .vsp-section-warning{color:#935c17!important;border-color:#ead8b9}
     #vsp .vsp-patient{padding:8px 12px 7px!important;border:0!important;border-bottom:1px solid #d6dfdb!important;border-left:3px solid #a8b9b2!important;background:#fff;border-radius:0;margin:0 0 6px}
@@ -1579,7 +1580,7 @@
     #vsp .vsp-flk-form{margin:0 0 12px!important;padding:12px!important;border:1px solid #d5dfda!important;border-radius:5px!important;background:#fff!important}
     #vsp .vsp-flk-patient-picker{display:grid;gap:5px;min-width:0;margin-bottom:12px;color:#52635d;font-size:12px;font-weight:750}
     #vsp .vsp-flk-patient-picker select{width:100%;height:44px;padding:0 11px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#172522;font-size:16px}
-    #vsp .vsp-flk-loading-check{display:flex;align-items:center;justify-content:center;gap:5px;height:36px;box-sizing:border-box;padding:0 5px;border:1px solid #bdcbc4;border-radius:4px;background:#fff;color:#364a43;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer}
+    #vsp .vsp-flk-loading-check{display:flex;align-items:center;gap:5px;height:36px;box-sizing:border-box;padding:0 2px;color:#364a43;font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer}
     #vsp .vsp-flk-loading-check input{appearance:none;-webkit-appearance:none;position:relative;display:inline-grid;place-content:center;width:19px;height:19px;flex:none;margin:0;border:1px solid #a9b8b0;border-radius:4px;background:#fff!important;cursor:pointer}
     #vsp .vsp-flk-loading-check input:checked{border-color:#557968!important;background:#fff!important}
     #vsp .vsp-flk-loading-check input:checked:after{content:"";display:block;width:5px;height:9px;margin-top:-2px;border:solid #315f51;border-width:0 2px 2px 0;transform:rotate(45deg)}
@@ -1590,23 +1591,24 @@
     #vsp #vsp-flk-add{height:44px;border:0;border-radius:5px;background:#315f51;color:#fff;font-weight:750;cursor:pointer}
     #vsp #vsp-flk-add:hover{background:#234d40}
     #vsp #vsp-flk-error{min-height:0!important;margin-top:7px!important;color:#9b3d32!important}
-    #vsp .vsp-flk-result{margin:0;padding:10px 2px 12px;border-bottom:2px solid #a5b8ae}
-    #vsp .vsp-flk-result-title{display:grid;grid-template-columns:minmax(0,1fr) 290px 28px;align-items:center;gap:8px;max-width:640px;color:#172522}
-    #vsp .vsp-flk-result-title > strong{overflow-wrap:anywhere}
-    #vsp .vsp-flk-patient-weight{display:block;font-size:12px;line-height:1.4;color:#64748b;font-weight:500}
-    #vsp .vsp-flk-remove{grid-column:3;grid-row:1;width:28px;height:36px;padding:0;border:0;background:transparent;color:#64748b;font-size:22px;cursor:pointer}
-    #vsp .vsp-flk-controls{grid-column:2;grid-row:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:end;width:100%;margin:0}
-    #vsp .vsp-flk-bag{margin-top:4px;padding:9px 11px!important;border:1px solid #d9e2de;border-radius:5px;background:#eaf0ed!important}
-    #vsp .vsp-flk-value-row{padding:6px 3px!important;border-color:#e2e9e6!important}
-    #vsp .vsp-flk-value-row strong{color:#33443e!important;font-size:16px!important}
-    #vsp .vsp-flk-setting{display:grid;gap:4px;min-width:0;font-size:12px;color:#53635e}
-    #vsp .vsp-flk-setting-unit{margin-left:3px;font-size:11px;font-weight:400}
-    #vsp .vsp-flk-setting input,#vsp .vsp-flk-setting select{width:100%;min-width:0;height:36px;box-sizing:border-box;padding:0 3px;text-align:center;border:1px solid #bdcbc4;border-radius:4px;background:#fff;color:#315f51;font-size:16px;font-weight:700}
-    #vsp .vsp-flk-stepper input{appearance:textfield;-moz-appearance:textfield;border:0;border-radius:0;padding:0}
+    #vsp .vsp-flk-result{margin:0;padding:14px 0 16px;border-bottom:1px solid #a5b8ae}
+    #vsp .vsp-flk-result-title{display:flex;align-items:center;gap:10px;margin-bottom:10px;color:#172522}
+    #vsp .vsp-flk-result-title > strong{min-width:0;overflow-wrap:anywhere;line-height:1.5}
+    #vsp .vsp-flk-patient-weight{display:inline-block;margin-left:6px;font-size:12px;line-height:1.4;color:#64748b;font-weight:500;white-space:nowrap}
+    #vsp .vsp-flk-remove{order:3;flex:none;margin-left:auto;width:24px;height:36px;padding:0;border:0;background:transparent;color:#83918b;font-size:20px;cursor:pointer}
+    #vsp .vsp-flk-controls{order:2;display:flex;flex:none;align-items:center;gap:6px;margin:0}
+    #vsp .vsp-flk-bag{margin:0 0 2px;padding:8px 10px!important;border:0;border-bottom:1px solid #d4dfd9!important;border-radius:4px;background:#eaf0ed!important}
+    #vsp .vsp-flk-value-row{padding:7px 3px!important;border-color:#e2e9e6!important}
+    #vsp .vsp-flk-value-row strong{color:#33443e!important;font-size:16px!important;font-weight:650;font-variant-numeric:tabular-nums}
+    #vsp .vsp-flk-volume-unit{margin-left:4px;font-size:12px;color:#63756c;font-weight:400}
+    #vsp .vsp-flk-setting{display:flex;align-items:center;gap:4px;box-sizing:border-box;height:36px;min-width:0;padding:0 6px;border:1px solid #bdcbc4;border-radius:4px;background:#fff;font-size:12px;color:#53635e;white-space:nowrap}
+    #vsp .vsp-flk-setting-unit{font-size:11px;font-weight:400}
+    #vsp .vsp-flk-setting-short{display:none}
+    #vsp .vsp-flk-setting input,#vsp .vsp-flk-setting select{width:50px;min-width:0;height:34px;box-sizing:border-box;padding:0 2px;text-align:center;border:0;border-radius:0;background:transparent;color:#315f51;font-size:14px;font-weight:700}
+    #vsp .vsp-flk-stepper input{appearance:textfield;-moz-appearance:textfield;width:24px;padding:0}
     #vsp .vsp-flk-stepper input::-webkit-inner-spin-button,#vsp .vsp-flk-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
-    #vsp .vsp-flk-stepper{display:grid;grid-template-columns:26px minmax(0,1fr) 26px;align-items:center;height:36px;box-sizing:border-box;border:1px solid #bdcbc4;border-radius:4px;background:#fff;overflow:hidden}
-    #vsp .vsp-flk-stepper input{height:34px}
-    #vsp .vsp-flk-stepper button{width:26px;height:34px;padding:0;border:0;background:#fff;color:#315f51;font-size:18px;cursor:pointer}
+    #vsp .vsp-flk-stepper{display:grid;grid-template-columns:18px 24px 18px;align-items:center;height:34px;box-sizing:border-box;overflow:hidden}
+    #vsp .vsp-flk-stepper button{width:18px;height:34px;padding:0;border:0;background:transparent;color:#315f51;font-size:18px;cursor:pointer}
     #vsp .vsp-flk-stepper button:disabled{opacity:.35;cursor:default}
     #vsp #vsp-concentration-toggle,#vsp .vsp-stock-settings button{min-height:40px;padding:6px 10px;border:1px solid #bdcbc4;border-radius:4px;background:#fff;color:#315f51;font-size:13px;cursor:pointer}
     #vsp .vsp-stock-settings{display:flex;align-items:end;flex-wrap:wrap;gap:8px;padding:10px 0;border-top:1px solid #d7e0dc;border-bottom:1px solid #d7e0dc}
@@ -1628,18 +1630,22 @@
     #vsp .vsp-time-filter select{max-width:144px;padding-right:20px;min-height:36px;font-size:14px}
     #vsp .vsp-flk-form{padding:11px!important}
     #vsp .vsp-flk-entry-row{grid-template-columns:minmax(0,1fr) 76px 60px;gap:6px}
-    #vsp .vsp-flk-result-title{grid-template-columns:minmax(0,1fr) 206px 20px;gap:4px}
-    #vsp .vsp-flk-result-title > strong{font-size:14px!important;line-height:1.4}
-    #vsp .vsp-flk-remove{width:20px;height:32px;font-size:20px}
-    #vsp .vsp-flk-controls{grid-template-columns:70px 60px 68px;gap:4px}
-    #vsp .vsp-flk-loading-check{height:32px;padding:0 2px;font-size:11px;gap:3px}
+    #vsp .vsp-flk-result-title{gap:3px}
+    #vsp .vsp-flk-result-title > strong{flex:1;font-size:14px!important;line-height:1.4}
+    #vsp .vsp-flk-patient-weight{display:block;margin:0;font-size:11px;white-space:normal}
+    #vsp .vsp-flk-remove{width:18px;height:32px;font-size:18px;margin:0}
+    #vsp .vsp-flk-controls{gap:3px}
+    #vsp .vsp-flk-loading-check{height:32px;padding:0;font-size:11px;gap:3px}
     #vsp .vsp-flk-loading-check input{width:16px;height:16px}
-    #vsp .vsp-flk-setting{font-size:11px;gap:3px}
-    #vsp .vsp-flk-setting-unit{font-size:10px;margin-left:2px}
-    #vsp .vsp-flk-setting select{height:32px;font-size:14px;padding:0 1px}
-    #vsp .vsp-flk-stepper{height:32px;grid-template-columns:20px minmax(0,1fr) 20px}
+    #vsp .vsp-flk-setting{height:32px;padding:0 3px;font-size:11px;gap:2px}
+    #vsp .vsp-flk-setting-name{display:none}
+    #vsp .vsp-flk-setting-short{display:inline}
+    #vsp .vsp-flk-setting-unit{font-size:10px}
+    #vsp .vsp-flk-setting select{width:48px;height:30px;font-size:14px;padding:0}
+    #vsp .vsp-flk-stepper{height:30px;grid-template-columns:16px 20px 16px}
+    #vsp .vsp-flk-stepper input{width:20px}
     #vsp .vsp-flk-stepper input,#vsp .vsp-flk-stepper button{height:30px;font-size:14px}
-    #vsp .vsp-flk-stepper button{width:20px;font-size:16px}
+    #vsp .vsp-flk-stepper button{width:16px;font-size:16px}
     #vsp .vsp-patient{padding-left:9px!important;padding-right:8px!important}
     }
     @media(max-width:360px){
@@ -1705,6 +1711,7 @@
     const paintFlk = (patients) => {
     const body = box.querySelector('#vsp-body');
     if (!body) return;
+    body.classList.add('vsp-flk-body');
     text = flkText(flkEntries);
     const options = ['<option value="">입원환자 선택</option>'].concat(patients.map((patient, index) =>
     '<option value="' + index + '"' + (String(patient.pid) === flkDraft.pid ? ' selected' : '') + '>' + esc(patient.name + ' · ' + patient.cage +
@@ -1720,21 +1727,21 @@
     '<input type="number" data-flk-' + field + '="' + index + '" aria-label="' + esc(entry.name + ' ' + label) + '" min="' + min + '" step="' + step + '" value="' + value + '">' +
     '<button data-flk-step="' + field + '" data-index="' + index + '" data-direction="1" aria-label="' + esc(entry.name + ' ' + label + ' 늘리기') + '">+</button></span>';
     const resultRow = (label, value) => '<div class="vsp-flk-value-row" style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:5px 0;border-bottom:1px solid #e2e8f0">' +
-    '<span style="font-size:14px;color:#475569">' + label + '</span><strong style="font-size:15px;color:#334155;white-space:nowrap">' + value + '</strong></div>';
-    return '<article class="vsp-flk-result" style="padding:11px 0 12px;border-bottom:2px solid #94a3b8">' +
+    '<span style="font-size:14px;color:#475569">' + label + '</span><strong style="white-space:nowrap">' + fixed(value, 2) + '<span class="vsp-flk-volume-unit"> mL</span></strong></div>';
+    return '<article class="vsp-flk-result">' +
     '<div class="vsp-flk-result-title"><strong style="font-size:16px">' + esc(entry.name) +
     '<span class="vsp-flk-patient-weight">(' + fixed(r.weight, 2) + ' kg)</span></strong>' +
     '<button class="vsp-flk-remove" data-flk-remove="' + index + '" aria-label="' + esc(entry.name) + ' 삭제" title="삭제">×</button>' +
     '<div class="vsp-flk-controls">' +
     '<label class="vsp-flk-loading-check"><input data-flk-loading="' + index + '" type="checkbox"' + (!entry.includeLoading ? ' checked' : '') + '><span>로딩 제외</span></label>' +
-    '<label class="vsp-flk-setting"><span>속도<span class="vsp-flk-setting-unit">mL/hr</span></span><select data-flk-rate="' + index + '" aria-label="' + esc(entry.name + ' FLK 속도') + '">' +
-    rates.map((rate) => '<option value="' + rate + '"' + (rate === r.rate ? ' selected' : '') + '>' + rate.toFixed(1) + '</option>').join('') + '</select></label>' +
-    '<div class="vsp-flk-setting"><span>Fentanyl<span class="vsp-flk-setting-unit">A</span></span>' + stepper('ampules', entry.ampules, 1, 1, 'Fentanyl 앰플 수') + '</div></div></div>' +
+    '<label class="vsp-flk-setting vsp-flk-rate-control"><span class="vsp-flk-setting-name">속도</span><select data-flk-rate="' + index + '" aria-label="' + esc(entry.name + ' FLK 속도') + '">' +
+    rates.map((rate) => '<option value="' + rate + '"' + (rate === r.rate ? ' selected' : '') + '>' + rate.toFixed(1) + '</option>').join('') + '</select><span class="vsp-flk-setting-unit">mL/hr</span></label>' +
+    '<div class="vsp-flk-setting vsp-flk-ampule-control" title="Fentanyl 앰플 수"><span class="vsp-flk-setting-name">Fentanyl</span><span class="vsp-flk-setting-short" aria-hidden="true">F</span>' + stepper('ampules', entry.ampules, 1, 1, 'Fentanyl 앰플 수') + '<span class="vsp-flk-setting-unit">A</span></div></div></div>' +
     '<div style="margin-top:2px"><div class="vsp-flk-bag" style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:8px;background:#f1f5f9;border-bottom:2px solid #94a3b8">' +
     '<strong style="font-size:15px;color:#334155">IV bag</strong><strong style="font-size:18px;color:#111827;white-space:nowrap">' + r.bag + ' mL</strong></div>' +
-    resultRow('Fentanyl CRI', fixed(r.fentanyl, 2) + ' mL') + resultRow('Lidocaine', fixed(r.lidocaine, 2) + ' mL') +
-    resultRow('Ketamine', fixed(r.ketamine, 2) + ' mL') + resultRow('NS', fixed(r.ns, 2) + ' mL') +
-    (entry.includeLoading ? resultRow('Fentanyl loading', fixed(r.loading, 2) + ' mL') : '') + '</div>' +
+    resultRow('Fentanyl CRI', r.fentanyl) + resultRow('Lidocaine', r.lidocaine) +
+    resultRow('Ketamine', r.ketamine) + resultRow('NS', r.ns) +
+    (entry.includeLoading ? resultRow('Fentanyl loading', r.loading) : '') + '</div>' +
     '<div data-flk-error="' + index + '" role="alert" style="color:#9b3d32;font-size:13px"></div></article>';
     }).join('') : '<p style="color:#64748b;margin-top:18px">환자를 선택하거나 이름과 체중을 입력해 추가하세요.</p>';
     body.innerHTML = '<section class="vsp-flk-form">' +
@@ -1825,6 +1832,7 @@
     const paint = (id, sections) => {
     const body = box.querySelector('#vsp-body');
     if (!body) return;
+    body.classList.remove('vsp-flk-body');
     const date = ymd(new Date(sections.snapshot?.checkedAt || Date.now()));
     const ready = id === 'inj' ? loadReady(date) : {};
     const view = id === 'inj' ? injectionDisplay(sections, selectedInjectionTime, ready) : null;
