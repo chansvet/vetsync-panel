@@ -89,7 +89,52 @@ assert.equal(flkAuto.bag, 36);
 assert.equal(flkAuto.duration, 24);
 assert.ok(flkAuto.fentanylTotal < 10);
 assert.equal(ctx.api.calculateFlk(0), null);
-assert.equal(ctx.api.calculateFlk(50.1), null);
+assert.ok(ctx.api.calculateFlk(50.1).valid);
+const largeFlk = ctx.api.calculateFlk(80, true, 2);
+assert.ok(largeFlk.valid);
+assert.equal(largeFlk.rate, 9.5);
+assert.ok(largeFlk.bag <= 150 && largeFlk.fentanylTotal < 20);
+const fastFlk = ctx.api.calculateFlk(9.8, true, 1, 2);
+assert.equal(fastFlk.bag, 49);
+assert.ok(Math.abs(fastFlk.fentanylTotal - 9.996) < 1e-12);
+assert.equal(ctx.api.calculateFlk(9.8, true, 1, 1), null);
+assert.equal(ctx.api.calculateFlk(9.8, true, 1, 1.7), null);
+assert.equal(ctx.api.calculateFlk(9.8, true, 0), null);
+assert.equal(ctx.api.calculateFlk(9.8, true, 1.5), null);
+assert.equal(ctx.api.calculateFlk(Infinity), null);
+assert.equal(ctx.api.flkValues(10, 48, 2).valid, false);
+assert.equal(ctx.api.flkValues(10, 49, 2, false).valid, true);
+for (const weight of [0.1, 3.4, 9.8, 50, 80, 120]) {
+  for (const includeLoading of [true, false]) for (const ampules of [1, 2, 3]) {
+    const minimum = ctx.api.calculateFlk(weight, includeLoading, ampules);
+    assert.ok(minimum && minimum.valid);
+    if (minimum.rate > 1) assert.equal(ctx.api.calculateFlk(weight, includeLoading, ampules, minimum.rate - 0.5), null);
+    for (const rate of [minimum.rate, minimum.rate + 0.5, minimum.rate + 10]) {
+      const result = ctx.api.calculateFlk(weight, includeLoading, ampules, rate);
+      assert.ok(result.valid && result.ns >= 0 && result.fentanylTotal < 10 * ampules);
+      assert.ok(Math.abs(result.fentanyl + result.lidocaine + result.ketamine + result.ns - result.bag) < 1e-10);
+      assert.ok(result.bag === (ampules > 1 ? 150 : 100) || !ctx.api.flkValues(weight, result.bag + 1, rate, includeLoading, ampules).valid);
+      assert.ok(Math.abs(result.fentanyl * .05 * rate / result.bag / weight - .002) < 1e-12);
+    }
+  }
+}
+assert.equal(engine.find('Cefotaxime').conc, 200);
+assert.equal(engine.find('Amikacin').conc, 125);
+assert.equal(engine.calculate('Cefotaxime', '20mpk', '5 kg').text, '0.50 mL');
+assert.equal(engine.calculate('Amikacin', '10mpk', '5 kg').text, '0.40 mL');
+assert.equal(ctx.api.isInjection('amikacin 10'), true);
+assert.equal(engine.calculate('Amikacin', '', '5 kg').volume, null);
+assert.equal(engine.setConcentration('SAM', 100, 'mg'), true);
+assert.equal(engine.calculate('SAM', '22mpk', '5 kg').text, '1.10 mL');
+assert.equal(engine.calculate('SAM', '22mpk', '5 kg', '', { concentration: 200, concentrationUnit: 'mg' }).text, '0.55 mL');
+assert.equal(engine.setConcentration('SAM', 100000, 'ug'), true);
+assert.equal(engine.calculate('SAM', '22mpk', '5 kg').text, '1.10 mL');
+assert.equal(engine.setConcentration('SAM', 0, 'mg'), false);
+assert.equal(engine.setConcentration('SAM', null), true);
+assert.equal(engine.calculate('SAM', '22mpk', '5 kg').text, '0.73 mL');
+assert.equal(engine.setConcentration('G-CSF', 250, 'ug'), true);
+assert.equal(engine.calculate('G-CSF', '', '1 kg').text, '0.02 mL');
+engine.setConcentration('G-CSF', null);
 assert.equal(ctx.api.doseFromInstruction('22mpk'), '22mpk');
 assert.equal(ctx.api.doseFromInstruction('용량: 22'), '22');
 assert.equal(ctx.api.doseFromInstruction('2번'), '');

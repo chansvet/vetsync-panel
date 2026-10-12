@@ -17,6 +17,7 @@ const aliases = [
 ['Chlorpheniramine', 'chloropheniramine', 'chlorpeniramine', '클로르페니라민'],
 ['Meloxicam', 'melo'], ['Meropenem', 'mero', '메로페넴'],
 ['Furosemide', 'furo', '퓨로세마이드', '라식스'],
+['Cefotaxime', '세포탁심'], ['Amikacin', '아미카신'],
 ];
 const byAlias = new Map();
 aliases.forEach(([name, ...other]) => {
@@ -24,6 +25,19 @@ const record = drugs.find((d) => d.name.split(' (')[0] === name);
 if (record) [name, ...other].forEach((a) => byAlias.set(normalize(a), { ...record, name }));
 });
 const find = (name) => byAlias.get(normalize(name));
+const concentrations = new Map();
+const getConcentration = (name) => {
+const drug = find(name);
+return drug && (concentrations.get(drug.name) || { value: drug.conc, unit: drug.unit === 'IU' ? 'IU' : 'mg' });
+};
+const setConcentration = (name, value, unit) => {
+const drug = find(name);
+if (!drug || drug.unit === 'IU') return false;
+if (value === null) { concentrations.delete(drug.name); return true; }
+if (!Number.isFinite(Number(value)) || !(Number(value) > 0) || !['mg', 'ug'].includes(unit)) return false;
+concentrations.set(drug.name, { value: Number(value), unit });
+return true;
+};
 const volumeText = (n) => n >= 0.01 ? n.toFixed(2) : n.toPrecision(2);
 const calculate = (name, written, weight, instruction = '', overrides = {}) => {
 const drug = find(name);
@@ -58,8 +72,9 @@ if (u === 'gpk') value *= 1000;
 const kg = /^\d+(?:\.\d+)? kg$/.test(weight || '') ? parseFloat(weight) : NaN;
 if (perKg && !(kg > 0)) return fail('체중 확인 필요');
 if (!(value > 0)) return fail('용량 확인 필요');
-const manualConc = Number(overrides.concentration);
-const manualUnit = overrides.concentrationUnit || '';
+const savedConc = drug && concentrations.get(drug.name);
+const manualConc = Number(overrides.concentration || savedConc?.value);
+const manualUnit = Number(overrides.concentration) > 0 ? overrides.concentrationUnit || '' : savedConc?.unit || '';
 if (manualConc > 0 && !manualUnit) return fail('역가 단위 확인 필요');
 if (!drug && !(manualConc > 0)) return fail('역가 미등록');
 const drugUnit = drug && (drug.unit || 'mg');
@@ -82,7 +97,8 @@ const nonDefault = !!drug && origin === '차트' && perKg && unit === drugUnit &
 return { volume, text: volumeText(volume) + ' mL', doseText, concText, nonDefault,
 basis: doseText + (concText ? ' · ' + concText : '') };
 };
-return { find, calculate };
+return { find, calculate, getConcentration, setConcentration,
+list: () => [...new Map([...byAlias.values()].map((drug) => [drug.name, drug])).values()] };
 };
 if (typeof module !== 'undefined') module.exports = createDoseEngine;
 const doseEngine = createDoseEngine([
@@ -231,6 +247,20 @@ const doseEngine = createDoseEngine([
 "note": ""
 },
 {
+"name": "Cefotaxime",
+"dose": null,
+"conc": 200,
+"sc": false,
+"note": ""
+},
+{
+"name": "Amikacin",
+"dose": null,
+"conc": 125,
+"sc": false,
+"note": ""
+},
+{
 "name": "Chlorpheniramine",
 "dose": 0.2,
 "conc": 2,
@@ -299,7 +329,7 @@ lidocaineRate: 1.5, lidocaineConc: 20,
 ketamineRate: 0.15, ketamineConc: 50,
 loadingDose: 0.002, loadingConc: 0.05,
 };
-const flkValues = (weight, bag, rate, includeLoading = true) => {
+const flkValues = (weight, bag, rate, includeLoading = true, ampules = 1) => {
 const duration = bag / rate;
 const fentanyl = FLK.fentanylRate * weight * duration / FLK.fentanylConc;
 const loading = includeLoading ? FLK.loadingDose * weight / FLK.loadingConc : 0;
@@ -309,23 +339,26 @@ const total = fentanyl + lidocaine + ketamine;
 const ns = bag - total;
 const checks = {
 rate: rate >= 1 && Math.abs(rate * 2 - Math.round(rate * 2)) < 1e-9,
-bag: Number.isInteger(bag) && bag > 0 && bag <= 100,
-fentanyl: fentanyl + loading < 10,
+bag: Number.isInteger(bag) && bag > 0 && bag <= (ampules > 1 ? 150 : 100),
+fentanyl: Number.isInteger(ampules) && ampules >= 1 && fentanyl + loading < 10 * ampules,
 fit: total <= bag,
 ns: ns >= 0,
 };
-return { weight, rate, bag, duration, fentanyl, loading, fentanylTotal: fentanyl + loading,
+return { weight, rate, bag, ampules, duration, fentanyl, loading, fentanylTotal: fentanyl + loading,
 lidocaine, ketamine, total, ns, checks, valid: Object.values(checks).every(Boolean) };
 };
-const calculateFlk = (weight, includeLoading = true) => {
+const calculateFlk = (weight, includeLoading = true, ampules = 1, selectedRate = null) => {
 const value = Number(weight);
-if (!(value > 0) || value > 50) return null;
-for (let rate = 1; rate <= 100; rate += 0.5) {
-if (rate + 1e-12 < 0.118 * value) continue;
-for (let bag = 100; bag >= 1; bag -= 1) {
-const result = flkValues(value, bag, rate, includeLoading);
-if (result.valid) return result;
-}
+const loading = includeLoading ? 0.04 * value : 0;
+if (!Number.isFinite(value) || !(value > 0) || !Number.isInteger(ampules) || ampules < 1 || loading >= ampules * 10) return null;
+const rateFloor = Math.max(1, 0.118 * value, 0.04 * value / (ampules * 10 - loading));
+let minimumRate = Math.ceil(rateFloor * 2) / 2;
+if (!flkValues(value, 1, minimumRate, includeLoading, ampules).valid) minimumRate += 0.5;
+const rate = selectedRate === null ? minimumRate : Number(selectedRate);
+if (!Number.isFinite(rate) || rate < minimumRate || !Number.isInteger(rate * 2)) return null;
+for (let bag = ampules > 1 ? 150 : 100; bag >= 1; bag -= 1) {
+const result = flkValues(value, bag, rate, includeLoading, ampules);
+if (result.valid) return { ...result, minimumRate };
 }
 return null;
 };
@@ -542,7 +575,7 @@ const n = (name || '').trim();
 if (!n || NONAME.test(n)) return false;
 if (FLUID_ORDER.test(n)) return false;
 if (SKIP.test(n) || PROC.test(n) || CRI.test(n) || EYE.test(n) || NOTINJ.test(n) || ORAL.test(n)) return false;
-return ROUTE.test(n) || KNOWN.test(n) || HYDROXOCOBALAMIN.test(n) || LEVETIRACETAM.test(n) || /vitamin\s*k/i.test(n);
+return ROUTE.test(n) || KNOWN.test(n) || HYDROXOCOBALAMIN.test(n) || LEVETIRACETAM.test(n) || /vitamin\s*k|\bamikacin\b|아미카신|세포탁심/i.test(n);
 };
 const frequencyFrom = (text) => {
 const value = String(text || '');
@@ -698,6 +731,15 @@ const manualEntries = new Map();
 const manualPatientWeights = new Map();
 const manualKey = (pid, drug) => pid + ':' + normDrug(drug);
 const readManual = (pid, drug) => manualEntries.get(manualKey(pid, drug)) || {};
+const concentrationKey = 'vetsync-drug-concentrations-v1';
+let savedConcentrations = {};
+try {
+const saved = JSON.parse(localStorage.getItem(concentrationKey) || '{}');
+if (saved && typeof saved === 'object' && !Array.isArray(saved)) savedConcentrations = saved;
+} catch (_) { /* Invalid saved settings fall back to the supplied stock strengths. */ }
+if (typeof doseEngine !== 'undefined') Object.entries(savedConcentrations).forEach(([name, setting]) => {
+if (!setting || !doseEngine.setConcentration(name, setting.value, setting.unit)) delete savedConcentrations[name];
+});
 const readPatientWeight = (pid) => manualPatientWeights.get(String(pid)) || '';
 const manualMarker = (item) => item.manualNeeded && Object.values(item.manualNeeded).some(Boolean) ? MAN0 + encodeURIComponent(JSON.stringify({
 pid: item.pid, drug: item.drug, written: item.dose, instruction: item.doseConflict ? '용량 불일치' : '',
@@ -1343,7 +1385,7 @@ return entry.name + ' (' + fixed(r.weight, 2) + ' kg)\n' +
 'Ketamine ' + fixed(r.ketamine, 2) + ' mL\n' +
 'NS ' + fixed(r.ns, 2) + ' mL\n' +
 (entry.includeLoading ? 'Fentanyl loading ' + fixed(r.loading, 2) + ' mL\n' : '로딩 제외\n') +
-'속도 ' + r.rate.toFixed(2) + ' mL/hr';
+'속도 ' + r.rate.toFixed(2) + ' mL/hr · Fentanyl ' + r.ampules + ' A';
 }).join('\n\n');
 const ampuleText = (items) => items.map((item) => item.label + ' ' + fixed(item.volume, 2) + ' mL → ' + item.count + '병' +
 (item.unresolved ? ' · 계산 불가 ' + item.unresolved + '회' : '')).join(' · ');
@@ -1389,7 +1431,7 @@ box.innerHTML =
 '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
 '<span class="vsp-brand">VETSYNC</span>' +
 '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-'<span class="vsp-header-spacer"></span><span class="vsp-version">2.3.3</span>' +
+'<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.0</span>' +
 '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
 '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1482,6 +1524,20 @@ panelStyle.textContent = `
 #vsp .vsp-flk-value-row{padding:6px 3px!important;border-color:#e2e9e6!important}
 #vsp .vsp-flk-value-row strong{color:#33443e!important;font-size:16px!important}
 #vsp .vsp-flk-rate{padding:8px 3px 2px!important}
+#vsp .vsp-flk-setting{display:flex;align-items:center;gap:6px;font-size:14px;white-space:nowrap}
+#vsp .vsp-flk-setting input{width:56px;min-height:40px;box-sizing:border-box;padding:4px 3px;text-align:center;border:1px solid #bdcbc4;border-radius:4px;background:#fff;color:#315f51;font-size:16px;font-weight:700}
+#vsp .vsp-flk-stepper{display:inline-flex;align-items:center;gap:3px}
+#vsp .vsp-flk-stepper button{width:32px;height:40px;border:1px solid #bdcbc4;border-radius:4px;background:#fff;color:#315f51;font-size:18px;cursor:pointer}
+#vsp .vsp-flk-stepper button:disabled{opacity:.35;cursor:default}
+#vsp .vsp-flk-result-title{flex-wrap:wrap}
+#vsp #vsp-concentration-toggle,#vsp .vsp-stock-settings button{min-height:40px;padding:6px 10px;border:1px solid #bdcbc4;border-radius:4px;background:#fff;color:#315f51;font-size:13px;cursor:pointer}
+#vsp .vsp-stock-settings{display:flex;align-items:end;flex-wrap:wrap;gap:8px;padding:10px 0;border-top:1px solid #d7e0dc;border-bottom:1px solid #d7e0dc}
+#vsp .vsp-stock-settings label{display:grid;gap:4px;min-width:0;font-size:12px;color:#53635e}
+#vsp .vsp-stock-settings label:first-child{flex:1 1 180px}
+#vsp .vsp-stock-settings input,#vsp .vsp-stock-settings select{min-height:40px;box-sizing:border-box;max-width:100%;border:1px solid #bdcbc4;border-radius:4px;background:#fff;padding:4px 7px;color:#253632;font-size:16px}
+#vsp #vsp-stock-value{width:90px;text-align:center}
+#vsp .vsp-stock-state{font-size:12px;color:#63756c}
+#vsp #vsp-stock-error{width:100%;color:#9b3d32;font-size:13px}
 @media(max-width:520px){
 #vsp .vsp-header{gap:5px;padding-left:10px!important;padding-right:10px!important}
 #vsp .vsp-brand{display:none}
@@ -1507,6 +1563,8 @@ let text = '';
 let requestId = 0;
 let sortMode = 'name';
 let selectedInjectionTime = '';
+let concentrationOpen = false;
+let concentrationDrug = 'SAM';
 const flkStateKey = 'vetsync-flk-state-v1';
 const todayKey = ymd(new Date());
 let savedFlkState = null;
@@ -1519,16 +1577,19 @@ let flkDraft = savedFlkState?.draft && typeof savedFlkState.draft === 'object' ?
 { pid: String(savedFlkState.draft.pid || ''), name: String(savedFlkState.draft.name || ''), weight: String(savedFlkState.draft.weight || '') } :
 { pid: '', name: '', weight: '' };
 const flkEntries = (Array.isArray(savedFlkState?.entries) ? savedFlkState.entries : [])
-.filter((entry) => entry && typeof entry.name === 'string' && Number(entry.weight) > 0 && Number(entry.weight) <= 50)
+.filter((entry) => entry && typeof entry.name === 'string' && Number.isFinite(Number(entry.weight)) && Number(entry.weight) > 0)
 .map((entry) => {
 const includeLoading = typeof entry.includeLoading === 'boolean' ? entry.includeLoading : legacyFlkIncludeLoading;
-return { name: entry.name, includeLoading, result: calculateFlk(Number(entry.weight), includeLoading) };
-});
+const ampules = Number.isInteger(entry.ampules) && entry.ampules > 0 ? entry.ampules : 1;
+return { name: entry.name, includeLoading, ampules,
+result: calculateFlk(Number(entry.weight), includeLoading, ampules, entry.rate ?? null) || calculateFlk(Number(entry.weight), includeLoading, ampules) };
+}).filter((entry) => entry.result);
 const saveFlkState = () => {
 try {
 localStorage.setItem(flkStateKey, JSON.stringify({
 date: todayKey,
-entries: flkEntries.map((entry) => ({ name: entry.name, weight: entry.result.weight, includeLoading: entry.includeLoading })),
+entries: flkEntries.map((entry) => ({ name: entry.name, weight: entry.result.weight, includeLoading: entry.includeLoading,
+ampules: entry.ampules, rate: entry.result.rate })),
 draft: flkDraft,
 }));
 } catch (_) { /* 저장 공간을 쓸 수 없어도 현재 화면은 유지한다. */ }
@@ -1558,6 +1619,10 @@ const options = ['<option value="">입원환자 선택</option>'].concat(patient
 (patient.weight ? ' · ' + patient.weight : ' · 체중 미입력')) + '</option>')).join('');
 const results = flkEntries.length ? flkEntries.map((entry, index) => {
 const r = entry.result;
+const stepper = (field, value, min, step, label) => '<span class="vsp-flk-stepper">' +
+'<button data-flk-step="' + field + '" data-index="' + index + '" data-direction="-1" aria-label="' + esc(entry.name + ' ' + label + ' 줄이기') + '"' + (value <= min ? ' disabled' : '') + '>-</button>' +
+'<input type="number" data-flk-' + field + '="' + index + '" aria-label="' + esc(entry.name + ' ' + label) + '" min="' + min + '" step="' + step + '" value="' + value + '">' +
+'<button data-flk-step="' + field + '" data-index="' + index + '" data-direction="1" aria-label="' + esc(entry.name + ' ' + label + ' 늘리기') + '">+</button></span>';
 const resultRow = (label, value) => '<div class="vsp-flk-value-row" style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:5px 0;border-bottom:1px solid #e2e8f0">' +
 '<span style="font-size:14px;color:#475569">' + label + '</span><strong style="font-size:15px;color:#334155;white-space:nowrap">' + value + '</strong></div>';
 return '<article class="vsp-flk-result" style="padding:11px 0 12px;border-bottom:2px solid #94a3b8">' +
@@ -1571,8 +1636,11 @@ return '<article class="vsp-flk-result" style="padding:11px 0 12px;border-bottom
 resultRow('Fentanyl CRI', fixed(r.fentanyl, 2) + ' mL') + resultRow('Lidocaine', fixed(r.lidocaine, 2) + ' mL') +
 resultRow('Ketamine', fixed(r.ketamine, 2) + ' mL') + resultRow('NS', fixed(r.ns, 2) + ' mL') +
 (entry.includeLoading ? resultRow('Fentanyl loading', fixed(r.loading, 2) + ' mL') : '') + '</div>' +
-'<div class="vsp-flk-rate" style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 3px"><span style="font-size:14px;color:#475569">속도</span>' +
-'<strong style="color:#0f766e;font-size:18px">' + r.rate.toFixed(2) + ' mL/hr</strong></div></article>';
+'<div class="vsp-flk-rate" style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:8px 0 3px">' +
+'<div class="vsp-flk-setting">속도 ' + stepper('rate', r.rate, r.minimumRate, 0.5, 'FLK 속도') + ' mL/hr</div>' +
+'<div class="vsp-flk-setting">Fentanyl ' + stepper('ampules', entry.ampules, 1, 1, 'Fentanyl 앰플 수') + ' A</div>' +
+'<span style="font-size:12px;color:#63756c">최저 ' + r.minimumRate.toFixed(1) + ' mL/hr · bag 최대 ' + (entry.ampules > 1 ? 150 : 100) + ' mL</span></div>' +
+'<div data-flk-error="' + index + '" role="alert" style="color:#9b3d32;font-size:13px"></div></article>';
 }).join('') : '<p style="color:#64748b;margin-top:18px">환자를 선택하거나 이름과 체중을 입력해 추가하세요.</p>';
 body.innerHTML = '<section class="vsp-flk-form">' +
 '<label class="vsp-flk-patient-picker" for="vsp-flk-patient"><span>입원환자 불러오기</span>' +
@@ -1607,8 +1675,8 @@ const weight = Number(weightInput.value);
 const includeLoading = true;
 const result = calculateFlk(weight, includeLoading);
 if (!name) { error.textContent = '환자 이름을 입력하세요.'; nameInput.focus(); return; }
-if (!result) { error.textContent = '체중은 0보다 크고 50 kg 이하여야 합니다.'; weightInput.focus(); return; }
-flkEntries.push({ name, result, includeLoading });
+if (!result) { error.textContent = '체중은 0보다 크고 250 kg 미만으로 입력하세요.'; weightInput.focus(); return; }
+flkEntries.push({ name, result, includeLoading, ampules: 1 });
 flkDraft = { pid: '', name: '', weight: '' };
 saveFlkState();
 paintFlk(patients);
@@ -1617,10 +1685,42 @@ body.querySelectorAll('[data-flk-loading]').forEach((checkbox) => {
 checkbox.onchange = () => {
 const entry = flkEntries[Number(checkbox.dataset.flkLoading)];
 if (!entry) return;
-entry.includeLoading = !checkbox.checked;
-entry.result = calculateFlk(entry.result.weight, entry.includeLoading);
+const includeLoading = !checkbox.checked;
+const result = calculateFlk(entry.result.weight, includeLoading, entry.ampules, entry.result.rate) ||
+calculateFlk(entry.result.weight, includeLoading, entry.ampules);
+if (!result) { checkbox.checked = !entry.includeLoading; return; }
+entry.includeLoading = includeLoading;
+entry.result = result;
 saveFlkState();
 paintFlk(patients);
+};
+});
+body.querySelectorAll('[data-flk-rate],[data-flk-ampules]').forEach((input) => {
+input.onchange = () => {
+const rateControl = input.hasAttribute('data-flk-rate');
+const index = Number(rateControl ? input.dataset.flkRate : input.dataset.flkAmpules);
+const entry = flkEntries[index];
+const ampules = rateControl ? entry.ampules : Number(input.value);
+const rate = rateControl ? Number(input.value) : entry.result.rate;
+const result = calculateFlk(entry.result.weight, entry.includeLoading, ampules, rate) ||
+(!rateControl ? calculateFlk(entry.result.weight, entry.includeLoading, ampules) : null);
+if (!result) {
+body.querySelector('[data-flk-error="' + index + '"]').textContent = rateControl ?
+'최저속도 이상, 0.5 mL/hr 단위로 입력하세요.' : '앰플 수는 1 이상의 정수이며 로딩 용량보다 커야 합니다.';
+input.value = rateControl ? entry.result.rate : entry.ampules;
+return;
+}
+entry.ampules = ampules;
+entry.result = result;
+saveFlkState();
+paintFlk(patients);
+};
+});
+body.querySelectorAll('[data-flk-step]').forEach((button) => {
+button.onclick = () => {
+const input = body.querySelector('[data-flk-' + button.dataset.flkStep + '="' + button.dataset.index + '"]');
+input.value = Number(input.value) + Number(input.step) * Number(button.dataset.direction);
+input.onchange();
 };
 });
 body.querySelectorAll('[data-flk-remove]').forEach((button) => {
@@ -1655,6 +1755,7 @@ const sortControl =
 const refresh = id === 'inj' ?
 '<div class="vsp-refresh-row" style="margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
 '<button id="vsp-refresh" style="font:inherit;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff">새로 확인</button>' +
+'<button id="vsp-concentration-toggle" aria-expanded="' + concentrationOpen + '">역가 설정</button>' +
 '<span style="font-size:13px;color:#64748b;font-weight:600">' + esc(sections[0].reviewNote || '현재 확인 시간 미기록') + '</span></div>' : '';
 const availableTimes = new Map();
 if (view) {
@@ -1673,7 +1774,48 @@ const changes = id === 'inj' && changedPatientIds.size ?
 '<div class="vsp-changebar" style="margin:0 -16px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #cbd5e1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
 '<strong style="color:#92400e">[변경] ' + changedPatientIds.size + '명</strong><span style="flex:1"></span>' +
 '<button id="vsp-accept" style="font:inherit;font-weight:700;padding:7px 12px;border:1px solid #0f766e;border-radius:6px;background:#fff;color:#0f766e">변경 확인</button></div>' : '';
-body.innerHTML = '<div class="vsp-list-controls">' + sortControl + timeControl + '</div>' + refresh + firstCheck + changes + (view ? ampuleHtml(view.snapshot) : '') + render(ordered, id);
+const stockDrugs = typeof doseEngine !== 'undefined' ? doseEngine.list().filter((drug) => drug.unit !== 'IU') : [];
+const stock = typeof doseEngine !== 'undefined' ? doseEngine.getConcentration(concentrationDrug) : null;
+const stockSettings = id === 'inj' && concentrationOpen && stock ?
+'<section class="vsp-stock-settings" aria-label="저장된 역가 설정"><label>약물<select id="vsp-stock-drug">' + stockDrugs.map((drug) =>
+'<option value="' + esc(drug.name) + '"' + (drug.name === concentrationDrug ? ' selected' : '') + '>' + esc(drug.name) + '</option>').join('') +
+'</select></label><label>역가<input id="vsp-stock-value" type="number" min="0" step="any" value="' + stock.value + '"></label>' +
+'<label>단위<select id="vsp-stock-unit"><option value="mg"' + (stock.unit === 'mg' ? ' selected' : '') + '>mg/mL</option>' +
+'<option value="ug"' + (stock.unit === 'ug' ? ' selected' : '') + '>µg/mL</option></select></label>' +
+'<button id="vsp-stock-save">저장</button><button id="vsp-stock-reset">기본값 복원</button>' +
+'<span class="vsp-stock-state">' + (savedConcentrations[concentrationDrug] ? '변경 역가 · 이 브라우저에 저장됨' : '기본 역가') + '</span>' +
+'<div id="vsp-stock-error" role="alert"></div></section>' : '';
+body.innerHTML = '<div class="vsp-list-controls">' + sortControl + timeControl + '</div>' + refresh + stockSettings + firstCheck + changes + (view ? ampuleHtml(view.snapshot) : '') + render(ordered, id);
+const stockToggle = body.querySelector('#vsp-concentration-toggle');
+if (stockToggle) stockToggle.onclick = () => { concentrationOpen = !concentrationOpen; paint(id, sections); };
+const stockPicker = body.querySelector('#vsp-stock-drug');
+if (stockPicker) {
+stockPicker.onchange = () => { concentrationDrug = stockPicker.value; paint(id, sections); };
+const unitPicker = body.querySelector('#vsp-stock-unit');
+let oldUnit = unitPicker.value;
+unitPicker.onchange = () => {
+const input = body.querySelector('#vsp-stock-value');
+if (Number(input.value) > 0 && unitPicker.value !== oldUnit) input.value = Number(input.value) * (oldUnit === 'mg' ? 1000 : 0.001);
+oldUnit = unitPicker.value;
+};
+const applyStock = (reset) => {
+const value = Number(body.querySelector('#vsp-stock-value').value);
+const unit = unitPicker.value;
+const error = body.querySelector('#vsp-stock-error');
+if (!reset && (!Number.isFinite(value) || !(value > 0))) { error.textContent = '역가는 0보다 큰 숫자로 입력하세요.'; return; }
+const next = { ...savedConcentrations };
+if (reset) delete next[concentrationDrug];
+else next[concentrationDrug] = { value, unit };
+try { localStorage.setItem(concentrationKey, JSON.stringify(next)); }
+catch (_) { error.textContent = '역가를 저장할 수 없습니다. 브라우저 저장 공간을 확인하세요.'; return; }
+savedConcentrations = next;
+doseEngine.setConcentration(concentrationDrug, reset ? null : value, unit);
+Object.keys(sections.snapshot?.patients || {}).forEach((pid) => refreshLocalInjectionPatient(sections, pid));
+paint(id, sections);
+};
+body.querySelector('#vsp-stock-save').onclick = () => applyStock(false);
+body.querySelector('#vsp-stock-reset').onclick = () => applyStock(true);
+}
 const timeSelect = body.querySelector('#vsp-time');
 if (timeSelect) timeSelect.onchange = () => { selectedInjectionTime = timeSelect.value; paint(id, sections); };
 const persistReady = (records) => {

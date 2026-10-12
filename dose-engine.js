@@ -15,6 +15,7 @@ const createDoseEngine = (drugs) => {
     ['Chlorpheniramine', 'chloropheniramine', 'chlorpeniramine', '클로르페니라민'],
     ['Meloxicam', 'melo'], ['Meropenem', 'mero', '메로페넴'],
     ['Furosemide', 'furo', '퓨로세마이드', '라식스'],
+    ['Cefotaxime', '세포탁심'], ['Amikacin', '아미카신'],
   ];
   const byAlias = new Map();
   aliases.forEach(([name, ...other]) => {
@@ -22,6 +23,19 @@ const createDoseEngine = (drugs) => {
     if (record) [name, ...other].forEach((a) => byAlias.set(normalize(a), { ...record, name }));
   });
   const find = (name) => byAlias.get(normalize(name));
+  const concentrations = new Map();
+  const getConcentration = (name) => {
+    const drug = find(name);
+    return drug && (concentrations.get(drug.name) || { value: drug.conc, unit: drug.unit === 'IU' ? 'IU' : 'mg' });
+  };
+  const setConcentration = (name, value, unit) => {
+    const drug = find(name);
+    if (!drug || drug.unit === 'IU') return false;
+    if (value === null) { concentrations.delete(drug.name); return true; }
+    if (!Number.isFinite(Number(value)) || !(Number(value) > 0) || !['mg', 'ug'].includes(unit)) return false;
+    concentrations.set(drug.name, { value: Number(value), unit });
+    return true;
+  };
   const volumeText = (n) => n >= 0.01 ? n.toFixed(2) : n.toPrecision(2);
   const calculate = (name, written, weight, instruction = '', overrides = {}) => {
     const drug = find(name);
@@ -57,8 +71,9 @@ if (!drug && !dose) return fail('용량·역가 확인 필요');
     const kg = /^\d+(?:\.\d+)? kg$/.test(weight || '') ? parseFloat(weight) : NaN;
     if (perKg && !(kg > 0)) return fail('체중 확인 필요');
     if (!(value > 0)) return fail('용량 확인 필요');
-    const manualConc = Number(overrides.concentration);
-    const manualUnit = overrides.concentrationUnit || '';
+    const savedConc = drug && concentrations.get(drug.name);
+    const manualConc = Number(overrides.concentration || savedConc?.value);
+    const manualUnit = Number(overrides.concentration) > 0 ? overrides.concentrationUnit || '' : savedConc?.unit || '';
 if (manualConc > 0 && !manualUnit) return fail('역가 단위 확인 필요');
 if (!drug && !(manualConc > 0)) return fail('역가 미등록');
     const drugUnit = drug && (drug.unit || 'mg');
@@ -81,6 +96,7 @@ if (unit !== 'mL' && !(conc > 0)) return fail('역가 확인 필요');
     return { volume, text: volumeText(volume) + ' mL', doseText, concText, nonDefault,
       basis: doseText + (concText ? ' · ' + concText : '') };
   };
-  return { find, calculate };
+  return { find, calculate, getConcentration, setConcentration,
+    list: () => [...new Map([...byAlias.values()].map((drug) => [drug.name, drug])).values()] };
 };
 if (typeof module !== 'undefined') module.exports = createDoseEngine;

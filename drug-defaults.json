@@ -144,6 +144,20 @@
     "note": ""
   },
   {
+    "name": "Cefotaxime",
+    "dose": null,
+    "conc": 200,
+    "sc": false,
+    "note": ""
+  },
+  {
+    "name": "Amikacin",
+    "dose": null,
+    "conc": 125,
+    "sc": false,
+    "note": ""
+  },
+  {
     "name": "Chlorpheniramine",
     "dose": 0.2,
     "conc": 2,
