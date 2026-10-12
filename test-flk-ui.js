@@ -154,14 +154,19 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
           return {top,bottom,height};
         });
       });
-      assert.ok(controls.every((r) => r.height === 36 && Math.abs(r.top - controls[0].top) < 1 && Math.abs(r.bottom - controls[0].bottom) < 1), 'Aligned controls at ' + width);
+      assert.ok(controls.every((r) => r.height === (width <= 520 ? 32 : 36) && Math.abs(r.top - controls[0].top) < 1 && Math.abs(r.bottom - controls[0].bottom) < 1), 'Aligned controls at ' + width);
+      assert.ok(await page.locator('.vsp-flk-result-title').first().evaluate((header) => {
+        const name = header.querySelector('strong').getBoundingClientRect();
+        const group = header.querySelector('.vsp-flk-controls').getBoundingClientRect();
+        return name.right <= group.left && name.top < group.bottom && group.top < name.bottom;
+      }), 'Name and controls share the same row at ' + width);
     }
     await page.setViewportSize({width:390,height:844});
     await page.locator('.vsp-flk-result').nth(2).scrollIntoViewIfNeeded();
-    await page.screenshot({path:'/tmp/vetsync-flk-2.4.3-mobile.png',fullPage:true});
+    await page.screenshot({path:'/tmp/vetsync-flk-2.4.4-mobile.png',fullPage:true});
     await page.setViewportSize({width:1024,height:768});
     await page.locator('.vsp-flk-result').first().scrollIntoViewIfNeeded();
-    await page.screenshot({path:'/tmp/vetsync-flk-2.4.3-desktop.png',fullPage:true});
+    await page.screenshot({path:'/tmp/vetsync-flk-2.4.4-desktop.png',fullPage:true});
     assert.deepEqual(errors, []);
     console.log('FLK controls, per-patient persistence, stored strengths and mobile layout passed');
   } finally {

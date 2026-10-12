@@ -1281,7 +1281,7 @@
       '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
       '<span class="vsp-brand">VETSYNC</span>' +
       '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-      '<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.3</span>' +
+      '<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.4</span>' +
       '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
       '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
       '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1368,14 +1368,16 @@
       #vsp #vsp-flk-add:hover{background:#234d40}
       #vsp #vsp-flk-error{min-height:0!important;margin-top:7px!important;color:#9b3d32!important}
       #vsp .vsp-flk-result{margin:0;padding:10px 2px 12px;border-bottom:2px solid #a5b8ae}
-      #vsp .vsp-flk-result-title{display:grid;grid-template-columns:minmax(0,1fr) 36px;align-items:center;gap:6px;color:#172522}
+      #vsp .vsp-flk-result-title{display:grid;grid-template-columns:minmax(0,1fr) 290px 28px;align-items:center;gap:8px;max-width:640px;color:#172522}
       #vsp .vsp-flk-result-title > strong{overflow-wrap:anywhere}
-      #vsp .vsp-flk-remove{width:36px;height:36px;padding:0;border:0;background:transparent;color:#64748b;font-size:22px;cursor:pointer}
-      #vsp .vsp-flk-controls{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:end;width:100%;max-width:390px;margin:2px 0 4px}
+      #vsp .vsp-flk-patient-weight{display:block;font-size:12px;line-height:1.4;color:#64748b;font-weight:500}
+      #vsp .vsp-flk-remove{grid-column:3;grid-row:1;width:28px;height:36px;padding:0;border:0;background:transparent;color:#64748b;font-size:22px;cursor:pointer}
+      #vsp .vsp-flk-controls{grid-column:2;grid-row:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:end;width:100%;margin:0}
       #vsp .vsp-flk-bag{margin-top:4px;padding:9px 11px!important;border:1px solid #d9e2de;border-radius:5px;background:#eaf0ed!important}
       #vsp .vsp-flk-value-row{padding:6px 3px!important;border-color:#e2e9e6!important}
       #vsp .vsp-flk-value-row strong{color:#33443e!important;font-size:16px!important}
       #vsp .vsp-flk-setting{display:grid;gap:4px;min-width:0;font-size:12px;color:#53635e}
+      #vsp .vsp-flk-setting-unit{margin-left:3px;font-size:11px;font-weight:400}
       #vsp .vsp-flk-setting input,#vsp .vsp-flk-setting select{width:100%;min-width:0;height:36px;box-sizing:border-box;padding:0 3px;text-align:center;border:1px solid #bdcbc4;border-radius:4px;background:#fff;color:#315f51;font-size:16px;font-weight:700}
       #vsp .vsp-flk-stepper input{appearance:textfield;-moz-appearance:textfield;border:0;border-radius:0;padding:0}
       #vsp .vsp-flk-stepper input::-webkit-inner-spin-button,#vsp .vsp-flk-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
@@ -1403,6 +1405,18 @@
         #vsp .vsp-time-filter select{max-width:144px;padding-right:20px;min-height:36px;font-size:14px}
         #vsp .vsp-flk-form{padding:11px!important}
         #vsp .vsp-flk-entry-row{grid-template-columns:minmax(0,1fr) 76px 60px;gap:6px}
+        #vsp .vsp-flk-result-title{grid-template-columns:minmax(0,1fr) 206px 20px;gap:4px}
+        #vsp .vsp-flk-result-title > strong{font-size:14px!important;line-height:1.4}
+        #vsp .vsp-flk-remove{width:20px;height:32px;font-size:20px}
+        #vsp .vsp-flk-controls{grid-template-columns:70px 60px 68px;gap:4px}
+        #vsp .vsp-flk-loading-check{height:32px;padding:0 2px;font-size:11px;gap:3px}
+        #vsp .vsp-flk-loading-check input{width:16px;height:16px}
+        #vsp .vsp-flk-setting{font-size:11px;gap:3px}
+        #vsp .vsp-flk-setting-unit{font-size:10px;margin-left:2px}
+        #vsp .vsp-flk-setting select{height:32px;font-size:14px;padding:0 1px}
+        #vsp .vsp-flk-stepper{height:32px;grid-template-columns:20px minmax(0,1fr) 20px}
+        #vsp .vsp-flk-stepper input,#vsp .vsp-flk-stepper button{height:30px;font-size:14px}
+        #vsp .vsp-flk-stepper button{width:20px;font-size:16px}
         #vsp .vsp-patient{padding-left:9px!important;padding-right:8px!important}
       }
       @media(max-width:360px){
@@ -1486,13 +1500,13 @@
           '<span style="font-size:14px;color:#475569">' + label + '</span><strong style="font-size:15px;color:#334155;white-space:nowrap">' + value + '</strong></div>';
         return '<article class="vsp-flk-result" style="padding:11px 0 12px;border-bottom:2px solid #94a3b8">' +
           '<div class="vsp-flk-result-title"><strong style="font-size:16px">' + esc(entry.name) +
-          ' <span style="font-size:14px;color:#64748b">(' + fixed(r.weight, 2) + ' kg)</span></strong>' +
+          '<span class="vsp-flk-patient-weight">(' + fixed(r.weight, 2) + ' kg)</span></strong>' +
           '<button class="vsp-flk-remove" data-flk-remove="' + index + '" aria-label="' + esc(entry.name) + ' 삭제" title="삭제">×</button>' +
           '<div class="vsp-flk-controls">' +
           '<label class="vsp-flk-loading-check"><input data-flk-loading="' + index + '" type="checkbox"' + (!entry.includeLoading ? ' checked' : '') + '><span>로딩 제외</span></label>' +
-          '<label class="vsp-flk-setting">속도 (mL/hr)<select data-flk-rate="' + index + '" aria-label="' + esc(entry.name + ' FLK 속도') + '">' +
+          '<label class="vsp-flk-setting"><span>속도<span class="vsp-flk-setting-unit">mL/hr</span></span><select data-flk-rate="' + index + '" aria-label="' + esc(entry.name + ' FLK 속도') + '">' +
           rates.map((rate) => '<option value="' + rate + '"' + (rate === r.rate ? ' selected' : '') + '>' + rate.toFixed(1) + '</option>').join('') + '</select></label>' +
-          '<div class="vsp-flk-setting"><span>Fentanyl (A)</span>' + stepper('ampules', entry.ampules, 1, 1, 'Fentanyl 앰플 수') + '</div></div></div>' +
+          '<div class="vsp-flk-setting"><span>Fentanyl<span class="vsp-flk-setting-unit">A</span></span>' + stepper('ampules', entry.ampules, 1, 1, 'Fentanyl 앰플 수') + '</div></div></div>' +
           '<div style="margin-top:2px"><div class="vsp-flk-bag" style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:8px;background:#f1f5f9;border-bottom:2px solid #94a3b8">' +
           '<strong style="font-size:15px;color:#334155">IV bag</strong><strong style="font-size:18px;color:#111827;white-space:nowrap">' + r.bag + ' mL</strong></div>' +
           resultRow('Fentanyl CRI', fixed(r.fentanyl, 2) + ' mL') + resultRow('Lidocaine', fixed(r.lidocaine, 2) + ' mL') +
