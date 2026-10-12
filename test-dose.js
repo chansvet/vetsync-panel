@@ -112,6 +112,12 @@ assert.ok(Math.abs(example42.fentanyl - example42Fast.fentanyl) < 1e-12);
 assert.equal(ctx.api.calculateFlk(4.2, true, 1, 2), null);
 assert.equal(ctx.api.calculateFlk(4.2, false, 1, 2), null);
 assert.equal(ctx.api.calculateFlk(4.2, true, 2, 1.5), null);
+for (const [rate, bag] of [[4.5,28],[5,31],[5.5,34],[6,37],[6.5,41]]) {
+  const result = ctx.api.calculateFlk(34.2, true, 1, rate);
+  assert.equal(result.bag, bag);
+  assert.ok(result.fentanylTotal < 10);
+}
+assert.equal(ctx.api.calculateFlk(34.2, true, 1, 6.6), null);
 for (const weight of [0.1, 3.4, 9.8, 50, 80, 120]) {
   for (const includeLoading of [true, false]) for (const ampules of [1, 2, 3]) {
     const minimum = ctx.api.calculateFlk(weight, includeLoading, ampules);
@@ -120,14 +126,11 @@ for (const weight of [0.1, 3.4, 9.8, 50, 80, 120]) {
     for (let rate = minimum.rate; rate <= minimum.maximumRate + 1; rate += 0.5) {
       const result = ctx.api.calculateFlk(weight, includeLoading, ampules, rate);
       if (!result) {
-        for (let bag = 1; bag <= (ampules > 1 ? 150 : 100); bag++) {
-          const alternative = ctx.api.flkValues(weight, bag, rate, includeLoading, ampules);
-          assert.ok(!alternative.valid || alternative.fentanyl + 1e-10 < minimum.fentanyl);
-        }
+        assert.ok(ctx.api.flkValues(weight, (ampules > 1 ? 150 : 100) + 1, rate, includeLoading, ampules).checks.fentanyl);
         continue;
       }
       assert.ok(result.valid && result.ns >= 0 && result.fentanylTotal < 10 * ampules);
-      assert.ok(result.fentanyl + 1e-10 >= minimum.fentanyl);
+      if (rate !== minimum.rate) assert.equal(ctx.api.flkValues(weight, result.bag + 1, rate, includeLoading, ampules).checks.fentanyl, false);
       assert.ok(Math.abs(result.fentanyl + result.lidocaine + result.ketamine + result.ns - result.bag) < 1e-10);
       assert.ok(result.bag === (ampules > 1 ? 150 : 100) || !ctx.api.flkValues(weight, result.bag + 1, rate, includeLoading, ampules).valid);
       assert.ok(Math.abs(result.fentanyl * .05 * rate / result.bag / weight - .002) < 1e-12);

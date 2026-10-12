@@ -133,6 +133,18 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     assert.equal(await page.locator('.vsp-flk-result').count(), 3);
     assert.equal(await page.locator('[data-flk-rate="2"]').inputValue(), '1');
     assert.equal(await page.locator('[data-flk-rate="0"]').inputValue(), '3');
+    await page.locator('#vsp-flk-name').fill('34.2 kg 테스트');
+    await page.locator('#vsp-flk-weight').fill('34.2');
+    await page.getByRole('button', {name:'추가',exact:true}).click();
+    const rates342 = await page.locator('[data-flk-rate="3"] option').evaluateAll((options) => options.map((o) => o.value));
+    for (const rate of ['4.5','5','5.5','6','6.5']) assert.ok(rates342.includes(rate));
+    await page.locator('[data-flk-rate="3"]').selectOption('5');
+    assert.match(await page.locator('.vsp-flk-result').nth(3).innerText(), /31 mL/);
+    await page.locator('[data-flk-rate="3"]').selectOption('6');
+    assert.match(await page.locator('.vsp-flk-result').nth(3).innerText(), /37 mL/);
+    await page.reload();
+    await page.getByRole('button', {name:'FLK',exact:true}).click();
+    assert.equal(await page.locator('[data-flk-rate="3"]').inputValue(), '6');
     for (const width of [320,390,1024]) {
       await page.setViewportSize({width,height:844});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No overflow at ' + width);
@@ -146,10 +158,10 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     }
     await page.setViewportSize({width:390,height:844});
     await page.locator('.vsp-flk-result').nth(2).scrollIntoViewIfNeeded();
-    await page.screenshot({path:'/tmp/vetsync-flk-2.4.2-mobile.png',fullPage:true});
+    await page.screenshot({path:'/tmp/vetsync-flk-2.4.3-mobile.png',fullPage:true});
     await page.setViewportSize({width:1024,height:768});
     await page.locator('.vsp-flk-result').first().scrollIntoViewIfNeeded();
-    await page.screenshot({path:'/tmp/vetsync-flk-2.4.2-desktop.png',fullPage:true});
+    await page.screenshot({path:'/tmp/vetsync-flk-2.4.3-desktop.png',fullPage:true});
     assert.deepEqual(errors, []);
     console.log('FLK controls, per-patient persistence, stored strengths and mobile layout passed');
   } finally {

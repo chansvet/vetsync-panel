@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.4.2
+// @version      2.4.3
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -388,11 +388,14 @@
     };
     const minimum = atRate(minimumRate);
     if (!minimum) return null;
-    const maximumRate = Math.floor((maxBag / minimum.duration + 1e-10) * 2) / 2;
+    const ampuleDuration = (ampules * 10 - loading) / (FLK.fentanylRate * value / FLK.fentanylConc);
+    const maximumRate = Math.max(minimumRate, Math.floor((maxBag + 1) / ampuleDuration * 2 + 1e-10) / 2);
     const rate = selectedRate === null ? minimumRate : Number(selectedRate);
     if (!Number.isFinite(rate) || rate < minimumRate || rate > maximumRate || !Number.isInteger(rate * 2)) return null;
     const result = rate === minimumRate ? minimum : atRate(rate);
-    return result && result.fentanyl + 1e-10 >= minimum.fentanyl ? { ...result, minimumRate, maximumRate } : null;
+    if (!result) return null;
+    const nextBagFitsAmpules = flkValues(value, result.bag + 1, rate, includeLoading, ampules).checks.fentanyl;
+    return rate === minimumRate || !nextBagFitsAmpules ? { ...result, minimumRate, maximumRate } : null;
     };
     const currentHospitalId = () => {
     try {
@@ -1501,7 +1504,7 @@
     '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="vsp-brand">VETSYNC</span>' +
     '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.2</span>' +
+    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.3</span>' +
     '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
     '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
