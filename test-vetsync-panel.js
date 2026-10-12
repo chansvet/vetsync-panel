@@ -5,7 +5,7 @@ const vm = require('vm');
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.replace(
   "  if (!location.hostname.endsWith('vetsync4.vetu1.com')) {\n    alert('VetSync 화면에서 눌러주세요.');\n  } else if (window.__VETSYNC_BUTTON) {\n    mountButton();\n    // 화면이 다시 그려지면서 버튼이 사라질 수 있으므로 주기적으로 확인한다\n    setInterval(mountButton, 3000);\n  } else {\n    open();\n  }",
-  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, unextendedBloodRows, cache, pickInj, checkedTime, breedOf, flkValues, calculateFlk, ampuleNeeds, preparationSignature, preparationEntries, filterInjectionSnapshot, injectionDisplay };'
+  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, unextendedBloodRows, cache, pickInj, checkedTime, breedOf, flkValues, calculateFlk, ampuleNeeds, preparationSignature, preparationEntries, filterInjectionSnapshot, injectionDisplay, acknowledgePrepared, saveInjectionReview };'
 );
 const context = {};
 vm.createContext(context);
@@ -268,9 +268,21 @@ assert.match(readyHtml, /vsp-ready-now">→ 0.70 mL · IV/);
 assert.strictEqual(readyView.snapshot.patients.ready.items[0].times.length, 1);
 assert.strictEqual(readySections.snapshot.patients.ready.items[0].times.length, 2);
 assert.strictEqual(readyRecords[readyEntry.id].item.calculation.volume, .5);
-// 목록의 변경 확인 후에도 준비 시점과의 비교는 남는다.
+// Updating the baseline alone cannot clear preparation changes; bulk review updates both.
 readySections.previousSnapshot = JSON.parse(JSON.stringify(readySections.snapshot));
 assert.match(context.__test.render(context.__test.injectionDisplay(readySections, '', readyRecords).display, 'inj'), /data-ready-confirm/);
+const allReadyView = context.__test.injectionDisplay(readySections, '', readyRecords);
+const reviewed = context.__test.acknowledgePrepared(allReadyView, readyRecords);
+assert.doesNotMatch(context.__test.render(context.__test.injectionDisplay(readySections, '', reviewed).display, 'inj'), /data-ready-confirm/);
+assert.ok(reviewed['@patient:ready'].completed);
+assert.ok(Object.values(reviewed).filter((r) => r.item).every((r) => r.item.calculation.volume === .7));
+assert.strictEqual(readyRecords[readyEntry.id].item.calculation.volume, .5);
+const laterChange = JSON.parse(JSON.stringify(readySections.snapshot));
+laterChange.patients.ready.items[0].calculation.volume = .8;
+const laterSections = [{ heading: '주사', groups: [] }];
+Object.assign(laterSections, {snapshot:laterChange, previousSnapshot:readySections.snapshot, states:{}});
+assert.match(context.__test.render(context.__test.injectionDisplay(laterSections, '', reviewed).display, 'inj'), /data-ready-confirm/);
+assert.strictEqual(context.__test.compareSnapshot(laterChange, readySections.snapshot, {}).changes, 1);
 // 삭제·퇴원 후 기준을 갱신해도 준비했던 주사는 남는다.
 readySections.snapshot = { checkedAt: readySnapshot.checkedAt, patients: {} };
 readySections.previousSnapshot = JSON.parse(JSON.stringify(readySections.snapshot));
@@ -285,6 +297,11 @@ const removedObservation = readyView.observations.get(readyEntry.id);
 const acknowledged = JSON.parse(JSON.stringify(readyRecords));
 readyView.observations.forEach((observation, id) => { acknowledged[id].signature = observation.signature; });
 assert.doesNotMatch(context.__test.render(context.__test.injectionDisplay(readySections, '', acknowledged).display, 'inj'), /data-ready-confirm/);
+const reviewedRemoval = context.__test.acknowledgePrepared(readyView, readyRecords);
+assert.strictEqual(context.__test.injectionDisplay(readySections, '', reviewedRemoval).display[0].groups.length, 0);
+const reappeared = [{ heading:'주사', groups:[] }];
+Object.assign(reappeared, { snapshot: readySnapshot, previousSnapshot:readySections.snapshot, states:{} });
+assert.match(context.__test.render(context.__test.injectionDisplay(reappeared, '', reviewedRemoval).display, 'inj'), /data-ready-confirm/);
 assert.strictEqual(context.__test.filterInjectionSnapshot(readySnapshot, '내일|1').patients.ready.items[0].times[0].hour, 1);
 const movedSections = [{ heading: '주사', groups: [] }];
 Object.assign(movedSections, { snapshot: JSON.parse(JSON.stringify(readySnapshot)),
@@ -316,8 +333,23 @@ assert.ok(addedView.display[0].groups[0].prepared);
 assert.deepStrictEqual(Array.from(addedView.display[0].groups[0].preparationChanged, Boolean), [false, true]);
 assert.strictEqual((context.__test.render(addedView.display, 'inj').match(/data-patient-ready=/g) || []).length, 1);
 assert.ok(addedView.display[0].groups[0].readyChanged);
+const reviewedAddition = context.__test.acknowledgePrepared(addedView, readyRecords);
+assert.doesNotMatch(context.__test.render(context.__test.injectionDisplay(addedSections, '', reviewedAddition).display, 'inj'), /data-ready-confirm/);
 const noReady = context.__test.injectionDisplay(addedSections, '', {});
 assert.doesNotMatch(context.__test.render(noReady.display, 'inj'), /vsp-treatment-prepared/);
+
+const stored = new Map();
+context.localStorage = { getItem: (key) => stored.get(key) ?? null,
+  setItem: (key, value) => stored.set(key, value), removeItem: (key) => stored.delete(key) };
+assert.strictEqual(context.__test.saveInjectionReview('2026-10-07', readySnapshot, readyRecords), true);
+const beforeFailure = [...stored];
+context.localStorage.setItem = (key, value) => {
+  if (key.startsWith('vetsync-injection-baseline')) throw new Error('Storage full');
+  stored.set(key, value);
+};
+assert.strictEqual(context.__test.saveInjectionReview('2026-10-07', laterChange, reviewed), false);
+assert.deepStrictEqual([...stored], beforeFailure);
+assert.match(context.__test.toHtml('이름 "테스트"'), /&quot;테스트&quot;/);
 
 context.__test.yesterdayWeights('2026-09-12', ['previous-weight']).then((weights) => {
   assert.strictEqual(weights.get('previous-weight'), '5.15 kg');

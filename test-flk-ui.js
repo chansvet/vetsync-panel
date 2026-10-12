@@ -9,9 +9,10 @@ let source = fs.readFileSync('vetsync-panel.src.js', 'utf8').replace('/* DOSE_EN
 source = source.replace("{ id: 'flk', label: 'FLK', run: flkPatients }", "{ id: 'flk', label: 'FLK', run: async () => [] }");
 source = source.replace("{ id: 'inj', label: '주사', run: injections }", `{
   id: 'inj', label: '주사', run: async () => {
-    const snapshot = makeSnapshot([{ pid:'demo', patient:'테스트 환자', code:'DEMO', breed:'푸들', weight:'5 kg', cage:'A장-1',
+    window.__testInjectionReads = (window.__testInjectionReads || 0) + 1;
+    const snapshot = makeSnapshot([['오늘',17,17],['내일',9,109]].map(([tag,hour,order]) => ({ pid:'demo', patient:'테스트 환자', code:'DEMO', breed:'푸들', weight:'5 kg', cage:'A장-1',
       drug:'SAM',dose:'22mpk',route:'IV',frequency:'TID',raw:'SAM 22mpk IV',note:'',instruction:'',
-      tag:'오늘',hour:17,order:17,cancelled:false }]);
+      tag,hour,order,cancelled:false })));
     const previousSnapshot = loadBaseline(ymd(new Date())) || JSON.parse(JSON.stringify(snapshot));
     saveBaseline(ymd(new Date()), previousSnapshot);
     const compared = compareSnapshot(snapshot, previousSnapshot, {});
@@ -37,11 +38,33 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     page.on('pageerror', (error) => errors.push(error.message));
     await page.route('https://**/*', (route) => route.abort());
     await page.goto('http://127.0.0.1:' + server.address().port);
-    await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).check();
     await page.getByRole('button', {name:'역가 설정',exact:true}).click();
     await page.locator('#vsp-stock-value').fill('100');
     await page.getByRole('button', {name:'저장',exact:true}).click();
     assert.match(await page.locator('.vsp-treatment').innerText(), /1.10 mL/);
+    assert.equal(await page.locator('#vsp-accept').count(), 1);
+    await page.locator('#vsp-accept').click();
+    assert.equal(await page.locator('#vsp-accept').count(), 0);
+    assert.equal(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked(), false);
+    await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).check();
+    await page.locator('#vsp-stock-value').fill('150');
+    await page.getByRole('button', {name:'저장',exact:true}).click();
+    assert.equal(await page.locator('[data-ready-confirm]').count(), 1);
+    await page.locator('#vsp-time').selectOption('오늘|17');
+    const readsBefore = await page.evaluate(() => window.__testInjectionReads);
+    await page.locator('#vsp-accept').click();
+    assert.equal(await page.evaluate(() => window.__testInjectionReads), readsBefore);
+    assert.equal(await page.locator('[data-ready-confirm]').count(), 0);
+    await page.locator('#vsp-time').selectOption('');
+    assert.equal(await page.locator('[data-ready-confirm]').count(), 0);
+    await page.reload();
+    assert.equal(await page.locator('[data-ready-confirm]').count(), 0);
+    assert.equal(await page.locator('#vsp-accept').count(), 0);
+    await page.getByRole('button', {name:'역가 설정',exact:true}).click();
+    await page.locator('#vsp-stock-value').fill('100');
+    await page.getByRole('button', {name:'저장',exact:true}).click();
+    assert.equal(await page.locator('[data-ready-confirm]').count(), 1);
+    await page.locator('#vsp-accept').click();
     assert.equal(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked(), true);
     await page.locator('#vsp-stock-unit').selectOption('ug');
     assert.equal(await page.locator('#vsp-stock-value').inputValue(), '100000');
@@ -70,10 +93,10 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.getByRole('button', {name:'가상 환자 FLK 속도 늘리기',exact:true}).click();
     assert.equal(await page.locator('[data-flk-rate="0"]').inputValue(), '2');
     assert.match(await page.locator('.vsp-flk-bag').innerText(), /49 mL/);
-    await page.locator('#vsp-flk-name').fill('입력 중 이름');
+    await page.locator('#vsp-flk-name').fill('입력 중 "이름"');
     await page.locator('[data-flk-ampules="0"]').fill('2');
     await page.locator('[data-flk-ampules="0"]').dispatchEvent('change');
-    assert.equal(await page.locator('#vsp-flk-name').inputValue(), '입력 중 이름');
+    assert.equal(await page.locator('#vsp-flk-name').inputValue(), '입력 중 "이름"');
     await page.locator('[data-flk-rate="0"]').fill('3');
     await page.locator('[data-flk-rate="0"]').dispatchEvent('change');
     assert.match(await page.locator('.vsp-flk-bag').innerText(), /150 mL/);
