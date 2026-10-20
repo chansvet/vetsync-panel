@@ -5,7 +5,7 @@ const vm = require('vm');
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.replace(
   "  if (!location.hostname.endsWith('vetsync4.vetu1.com')) {\n    alert('VetSync 화면에서 눌러주세요.');\n  } else if (window.__VETSYNC_BUTTON) {\n    mountButton();\n    // 화면이 다시 그려지면서 버튼이 사라질 수 있으므로 주기적으로 확인한다\n    setInterval(mountButton, 3000);\n  } else {\n    open();\n  }",
-  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, unextendedBloodRows, cache, pickInj, checkedTime, breedOf, flkValues, calculateFlk, ampuleNeeds, preparationSignature, preparationEntries, filterInjectionSnapshot, injectionDisplay, acknowledgePrepared, saveInjectionReview };'
+  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, unextendedBloodRows, cache, pickInj, checkedTime, breedOf, flkValues, calculateFlk, ampuleNeeds, preparationSignature, preparationEntries, filterInjectionSnapshot, injectionDisplay, acknowledgePrepared, saveInjectionReview, undoInjectionReview, loadReviewHistory };'
 );
 const context = {};
 vm.createContext(context);
@@ -349,6 +349,40 @@ context.localStorage.setItem = (key, value) => {
 };
 assert.strictEqual(context.__test.saveInjectionReview('2026-10-07', laterChange, reviewed), false);
 assert.deepStrictEqual([...stored], beforeFailure);
+context.localStorage.setItem = (key, value) => stored.set(key, value);
+assert.strictEqual(context.__test.undoInjectionReview('2026-10-07'), true);
+assert.deepStrictEqual([...stored.values()].map(JSON.parse), [{}, {date:'2026-10-07',entries:[]}]);
+assert.strictEqual(context.__test.undoInjectionReview('2026-10-07'), false);
+assert.strictEqual(context.__test.loadReviewHistory('2026-10-08').length, 0);
+// Undo only the acknowledged records, retaining preparation changes made afterwards.
+stored.clear();
+assert.ok(context.__test.saveInjectionReview('2026-10-07', readySnapshot, readyRecords));
+assert.ok(context.__test.saveInjectionReview('2026-10-07', laterChange, reviewed));
+const readyStorageKey = [...stored.keys()].find((key) => key.startsWith('vetsync-prepared-v1:'));
+const editedAfterReview = JSON.parse(stored.get(readyStorageKey));
+editedAfterReview['@patient:other'] = { pid:'other',completed:true,patient:{pid:'other',items:[]} };
+editedAfterReview[readyEntry.id].preparedAt = 'a subsequent preparation edit';
+stored.set(readyStorageKey, JSON.stringify(editedAfterReview));
+assert.ok(context.__test.undoInjectionReview('2026-10-07'));
+const undoneRecords = JSON.parse(stored.get(readyStorageKey));
+assert.ok(undoneRecords['@patient:ready'].completed);
+assert.ok(undoneRecords['@patient:other'].completed);
+assert.strictEqual(undoneRecords[readyEntry.id].preparedAt, 'a subsequent preparation edit');
+assert.strictEqual(undoneRecords[readyEntries[1].id].signature, readyRecords[readyEntries[1].id].signature);
+assert.ok(context.__test.saveInjectionReview('2026-10-07', null, reviewed, 'individual'));
+assert.ok(context.__test.undoInjectionReview('2026-10-07'));
+assert.deepStrictEqual(JSON.parse(stored.get(readyStorageKey)), undoneRecords);
+// A failed history write must roll back both comparison and preparation records.
+const beforeHistoryFailure = [...stored];
+context.localStorage.setItem = (key, value) => {
+  if (key.startsWith('vetsync-review-history')) throw new Error('Storage full');
+  stored.set(key, value);
+};
+assert.strictEqual(context.__test.saveInjectionReview('2026-10-07', laterChange, reviewed), false);
+assert.deepStrictEqual([...stored], beforeHistoryFailure);
+context.localStorage.setItem = (key, value) => stored.set(key, value);
+for (let n = 0; n < 12; n++) assert.ok(context.__test.saveInjectionReview('2026-10-07', laterChange, reviewed));
+assert.strictEqual(context.__test.loadReviewHistory('2026-10-07').length, 10);
 assert.match(context.__test.toHtml('이름 "테스트"'), /&quot;테스트&quot;/);
 
 context.__test.yesterdayWeights('2026-09-12', ['previous-weight']).then((weights) => {

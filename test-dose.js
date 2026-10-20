@@ -118,6 +118,20 @@ for (const [rate, bag] of [[4.5,28],[5,31],[5.5,34],[6,37],[6.5,41]]) {
   assert.ok(result.fentanylTotal < 10);
 }
 assert.equal(ctx.api.calculateFlk(34.2, true, 1, 6.6), null);
+const small100 = ctx.api.calculateFlk(2, true, 1, null, 100);
+const small150 = ctx.api.calculateFlk(2, true, 1, null, 150);
+assert.equal(small100.bag, 100);
+assert.equal(small150.bag, 123);
+assert.equal(small150.rate, 1);
+assert.equal(small150.duration, 123);
+assert.ok(Math.abs(small150.fentanylTotal - 9.92) < 1e-12);
+assert.ok(small150.valid && small150.ns >= 0);
+assert.equal(ctx.api.calculateFlk(2, false, 1, null, 150).bag, 124);
+assert.equal(ctx.api.flkValues(2, 124, 1, true, 1, 150).checks.fentanyl, false);
+assert.equal(ctx.api.calculateFlk(2, true, 1, 1.5, 150), null);
+assert.equal(ctx.api.calculateFlk(4.2, true, 1, 2, 100), null);
+assert.ok(ctx.api.calculateFlk(4.2, true, 1, 2, 150).valid);
+assert.equal(ctx.api.calculateFlk(2, true, 1, null, 200), null);
 for (const weight of [0.1, 3.4, 9.8, 50, 80, 120]) {
   for (const includeLoading of [true, false]) for (const ampules of [1, 2, 3]) {
     const minimum = ctx.api.calculateFlk(weight, includeLoading, ampules);

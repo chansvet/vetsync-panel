@@ -329,7 +329,7 @@ lidocaineRate: 1.5, lidocaineConc: 20,
 ketamineRate: 0.15, ketamineConc: 50,
 loadingDose: 0.002, loadingConc: 0.05,
 };
-const flkValues = (weight, bag, rate, includeLoading = true, ampules = 1) => {
+const flkValues = (weight, bag, rate, includeLoading = true, ampules = 1, maxBag = ampules > 1 ? 150 : 100) => {
 const duration = bag / rate;
 const fentanyl = FLK.fentanylRate * weight * duration / FLK.fentanylConc;
 const loading = includeLoading ? FLK.loadingDose * weight / FLK.loadingConc : 0;
@@ -339,25 +339,24 @@ const total = fentanyl + lidocaine + ketamine;
 const ns = bag - total;
 const checks = {
 rate: rate >= 1 && Math.abs(rate * 2 - Math.round(rate * 2)) < 1e-9,
-bag: Number.isInteger(bag) && bag > 0 && bag <= (ampules > 1 ? 150 : 100),
+bag: [100, 150].includes(maxBag) && Number.isInteger(bag) && bag > 0 && bag <= maxBag,
 fentanyl: Number.isInteger(ampules) && ampules >= 1 && fentanyl + loading < 10 * ampules,
 fit: total <= bag,
 ns: ns >= 0,
 };
-return { weight, rate, bag, ampules, duration, fentanyl, loading, fentanylTotal: fentanyl + loading,
+return { weight, rate, bag, ampules, maxBag, duration, fentanyl, loading, fentanylTotal: fentanyl + loading,
 lidocaine, ketamine, total, ns, checks, valid: Object.values(checks).every(Boolean) };
 };
-const calculateFlk = (weight, includeLoading = true, ampules = 1, selectedRate = null) => {
+const calculateFlk = (weight, includeLoading = true, ampules = 1, selectedRate = null, maxBag = ampules > 1 ? 150 : 100) => {
 const value = Number(weight);
 const loading = includeLoading ? 0.04 * value : 0;
-if (!Number.isFinite(value) || !(value > 0) || !Number.isInteger(ampules) || ampules < 1 || loading >= ampules * 10) return null;
+if (!Number.isFinite(value) || !(value > 0) || !Number.isInteger(ampules) || ampules < 1 || loading >= ampules * 10 || ![100, 150].includes(maxBag)) return null;
 const rateFloor = Math.max(1, 0.118 * value, 0.04 * value / (ampules * 10 - loading));
 let minimumRate = Math.ceil(rateFloor * 2) / 2;
-if (!flkValues(value, 1, minimumRate, includeLoading, ampules).valid) minimumRate += 0.5;
-const maxBag = ampules > 1 ? 150 : 100;
+if (!flkValues(value, 1, minimumRate, includeLoading, ampules, maxBag).valid) minimumRate += 0.5;
 const atRate = (rate) => {
 for (let bag = maxBag; bag >= 1; bag -= 1) {
-const result = flkValues(value, bag, rate, includeLoading, ampules);
+const result = flkValues(value, bag, rate, includeLoading, ampules, maxBag);
 if (result.valid) return result;
 }
 return null;
@@ -370,7 +369,7 @@ const rate = selectedRate === null ? minimumRate : Number(selectedRate);
 if (!Number.isFinite(rate) || rate < minimumRate || rate > maximumRate || !Number.isInteger(rate * 2)) return null;
 const result = rate === minimumRate ? minimum : atRate(rate);
 if (!result) return null;
-const nextBagFitsAmpules = flkValues(value, result.bag + 1, rate, includeLoading, ampules).checks.fentanyl;
+const nextBagFitsAmpules = flkValues(value, result.bag + 1, rate, includeLoading, ampules, maxBag).checks.fentanyl;
 return rate === minimumRate || !nextBagFitsAmpules ? { ...result, minimumRate, maximumRate } : null;
 };
 const currentHospitalId = () => {
@@ -1188,27 +1187,83 @@ signature: observation.signature, inactive: !!observation.inactive, confirmedAt 
 });
 return next;
 };
-const saveInjectionReview = (date, snapshot, records) => {
-const key = readyKey(date);
-let previousReady;
-let wroteReady = false;
+const reviewHistoryKey = () => 'vetsync-review-history-v1:' + currentHospitalId();
+const loadReviewHistory = (date) => {
 try {
-const readyValue = JSON.stringify(records);
-const baselineValue = JSON.stringify(snapshot);
-previousReady = localStorage.getItem(key);
-localStorage.setItem(key, readyValue);
-wroteReady = true;
-localStorage.setItem(baselineKey(date), baselineValue);
+const saved = JSON.parse(localStorage.getItem(reviewHistoryKey()) || 'null');
+const history = saved?.date === date ? saved.entries : [];
+return Array.isArray(history) ? history.filter((entry) => entry && entry.readyChanges &&
+['bulk', 'individual'].includes(entry.kind) &&
+(entry.beforeBaseline === null || typeof entry.beforeBaseline === 'string') &&
+(entry.afterBaseline === null || typeof entry.afterBaseline === 'string')).slice(-10) : [];
+} catch (_) { return []; }
+};
+const reviewHistoryValue = (date, history) => {
+const entries = history.slice(-10);
+let value = JSON.stringify({ date, entries });
+while (entries.length > 1 && value.length > 500000) {
+entries.shift();
+value = JSON.stringify({ date, entries });
+}
+return value;
+};
+const writeReviewStorage = (updates) => {
+const written = [];
+try {
+updates.forEach(([key, value]) => {
+const previous = localStorage.getItem(key);
+if (value === null) localStorage.removeItem(key);
+else localStorage.setItem(key, value);
+written.push([key, previous]);
+});
 return true;
 } catch (_) {
-if (wroteReady) {
+written.reverse().forEach(([key, previous]) => {
 try {
-if (previousReady === null) localStorage.removeItem(key);
-else localStorage.setItem(key, previousReady);
-} catch (_) { /* Leave the current screen unchanged when storage is unavailable. */ }
-}
+if (previous === null) localStorage.removeItem(key);
+else localStorage.setItem(key, previous);
+} catch (_) { /* Keep the current screen unchanged when storage is unavailable. */ }
+});
 return false;
 }
+};
+const saveInjectionReview = (date, snapshot, records, kind = 'bulk') => {
+try {
+const previousReady = JSON.parse(localStorage.getItem(readyKey(date)) || '{}');
+const beforeBaseline = localStorage.getItem(baselineKey(date));
+const afterBaseline = kind === 'bulk' ? JSON.stringify(snapshot) : beforeBaseline;
+const readyChanges = {};
+new Set([...Object.keys(previousReady || {}), ...Object.keys(records)]).forEach((key) => {
+const before = previousReady?.[key] || null;
+const after = records[key] || null;
+if (JSON.stringify(before) !== JSON.stringify(after)) readyChanges[key] = { before, after };
+});
+const history = loadReviewHistory(date);
+history.push({ kind, beforeBaseline, afterBaseline, readyChanges });
+return writeReviewStorage([
+[readyKey(date), JSON.stringify(records)],
+[baselineKey(date), afterBaseline],
+[reviewHistoryKey(), reviewHistoryValue(date, history)],
+]);
+} catch (_) { return false; }
+};
+const undoInjectionReview = (date) => {
+try {
+const history = loadReviewHistory(date);
+const entry = history.pop();
+if (!entry || localStorage.getItem(baselineKey(date)) !== entry.afterBaseline) return false;
+const records = JSON.parse(localStorage.getItem(readyKey(date)) || '{}');
+Object.entries(entry.readyChanges).forEach(([key, change]) => {
+if (JSON.stringify(records[key] || null) !== JSON.stringify(change.after)) return;
+if (change.before === null) delete records[key];
+else records[key] = change.before;
+});
+return writeReviewStorage([
+[readyKey(date), JSON.stringify(records)],
+[baselineKey(date), entry.beforeBaseline],
+[reviewHistoryKey(), reviewHistoryValue(date, history)],
+]);
+} catch (_) { return false; }
 };
 const checkedTime = (value) => {
 if (!value) return '시간 미기록';
@@ -1434,7 +1489,7 @@ return entry.name + ' (' + fixed(r.weight, 2) + ' kg)\n' +
 'Ketamine ' + fixed(r.ketamine, 2) + ' mL\n' +
 'NS ' + fixed(r.ns, 2) + ' mL\n' +
 (entry.includeLoading ? 'Fentanyl loading ' + fixed(r.loading, 2) + ' mL\n' : '로딩 제외\n') +
-'속도 ' + r.rate.toFixed(2) + ' mL/hr · Fentanyl ' + r.ampules + ' A';
+'속도 ' + r.rate.toFixed(2) + ' mL/hr · Fentanyl ' + r.ampules + ' A · bag 최대 ' + r.maxBag + ' mL';
 }).join('\n\n');
 const ampuleText = (items) => items.map((item) => item.label + ' ' + fixed(item.volume, 2) + ' mL → ' + item.count + '병' +
 (item.unresolved ? ' · 계산 불가 ' + item.unresolved + '회' : '')).join(' · ');
@@ -1480,7 +1535,7 @@ box.innerHTML =
 '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
 '<span class="vsp-brand">VETSYNC</span>' +
 '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-'<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.5</span>' +
+'<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.6</span>' +
 '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
 '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1531,6 +1586,8 @@ panelStyle.textContent = `
 #vsp [data-sort]{min-height:36px;padding:5px 12px!important;border:0!important;border-radius:4px!important;background:transparent!important;color:#41544c!important}
 #vsp [data-sort][aria-pressed="true"]{background:#315f51!important;color:#fff!important}
 #vsp #vsp-refresh{min-height:40px;padding:6px 12px!important;border-color:#bdcbc4!important;border-radius:5px!important;color:#315f51}
+#vsp #vsp-undo-review{width:38px;height:40px;padding:0;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#315f51;font-size:23px;line-height:1;cursor:pointer}
+#vsp #vsp-undo-review:disabled{opacity:.35;cursor:default}
 #vsp .vsp-time-filter{display:flex;align-items:center;gap:8px;margin:0;color:#53635e;font-size:13px;font-weight:700}
 #vsp .vsp-time-filter select{min-height:40px;padding:6px 30px 6px 10px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#253632;font:inherit;font-size:16px}
 #vsp .vsp-ready-row{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:7px}
@@ -1574,6 +1631,9 @@ panelStyle.textContent = `
 #vsp .vsp-flk-remove{order:3;flex:none;margin-left:auto;width:24px;height:36px;padding:0;border:0;background:transparent;color:#83918b;font-size:20px;cursor:pointer}
 #vsp .vsp-flk-controls{order:2;display:flex;flex:none;align-items:center;gap:6px;margin:0}
 #vsp .vsp-flk-bag{margin:0 0 2px;padding:8px 10px!important;border:0;border-bottom:1px solid #d4dfd9!important;border-radius:4px;background:#eaf0ed!important}
+#vsp .vsp-flk-bag-label{display:flex;align-items:center;gap:8px;font-size:14px;color:#33443e;flex-wrap:wrap}
+#vsp .vsp-flk-bag-limit{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:400;color:#63756c}
+#vsp .vsp-flk-bag-limit select{height:28px;border:1px solid #c3d0c9;border-radius:4px;background:#fff;color:#41584d;font-size:12px;padding:0 3px}
 #vsp .vsp-flk-value-row{padding:7px 3px!important;border-color:#e2e9e6!important}
 #vsp .vsp-flk-value-row strong{color:#33443e!important;font-size:16px!important;font-weight:650;font-variant-numeric:tabular-nums}
 #vsp .vsp-flk-volume-unit{margin-left:4px;font-size:12px;color:#63756c;font-weight:400}
@@ -1652,15 +1712,16 @@ const flkEntries = (Array.isArray(savedFlkState?.entries) ? savedFlkState.entrie
 .map((entry) => {
 const includeLoading = typeof entry.includeLoading === 'boolean' ? entry.includeLoading : legacyFlkIncludeLoading;
 const ampules = Number.isInteger(entry.ampules) && entry.ampules > 0 ? entry.ampules : 1;
-return { name: entry.name, includeLoading, ampules,
-result: calculateFlk(Number(entry.weight), includeLoading, ampules, entry.rate ?? null) || calculateFlk(Number(entry.weight), includeLoading, ampules) };
+const maxBag = [100, 150].includes(entry.maxBag) ? entry.maxBag : ampules > 1 ? 150 : 100;
+return { name: entry.name, includeLoading, ampules, maxBag,
+result: calculateFlk(Number(entry.weight), includeLoading, ampules, entry.rate ?? null, maxBag) || calculateFlk(Number(entry.weight), includeLoading, ampules, null, maxBag) };
 }).filter((entry) => entry.result);
 const saveFlkState = () => {
 try {
 localStorage.setItem(flkStateKey, JSON.stringify({
 date: todayKey,
 entries: flkEntries.map((entry) => ({ name: entry.name, weight: entry.result.weight, includeLoading: entry.includeLoading,
-ampules: entry.ampules, rate: entry.result.rate })),
+ampules: entry.ampules, rate: entry.result.rate, maxBag: entry.maxBag })),
 draft: flkDraft,
 }));
 } catch (_) { /* 저장 공간을 쓸 수 없어도 현재 화면은 유지한다. */ }
@@ -1677,6 +1738,8 @@ sections.splice(conditionalIndex, 1);
 }
 sections.changeCount = compared.changes;
 sections.changeKinds = compared.changeKinds;
+sections[0].reviewNote = sections.firstCheck ? '현재 확인 ' + checkedTime(sections.snapshot.checkedAt) :
+'이전 확인 ' + checkedTime(sections.previousSnapshot.checkedAt) + ' → 현재 확인 ' + checkedTime(sections.snapshot.checkedAt);
 };
 const refreshLocalInjectionPatient = (sections, pid) => {
 if (!sections || !sections.snapshot || !sections.snapshot.patients || !sections.snapshot.patients[pid]) return false;
@@ -1696,7 +1759,7 @@ const results = flkEntries.length ? flkEntries.map((entry, index) => {
 const r = entry.result;
 const rates = [];
 for (let rate = r.minimumRate; rate <= r.maximumRate; rate += 0.5) {
-if (calculateFlk(r.weight, entry.includeLoading, entry.ampules, rate)) rates.push(rate);
+if (calculateFlk(r.weight, entry.includeLoading, entry.ampules, rate, entry.maxBag)) rates.push(rate);
 }
 const stepper = (field, value, min, step, label) => '<span class="vsp-flk-stepper">' +
 '<button data-flk-step="' + field + '" data-index="' + index + '" data-direction="-1" aria-label="' + esc(entry.name + ' ' + label + ' 줄이기') + '"' + (value <= min ? ' disabled' : '') + '>-</button>' +
@@ -1714,7 +1777,9 @@ return '<article class="vsp-flk-result">' +
 rates.map((rate) => '<option value="' + rate + '"' + (rate === r.rate ? ' selected' : '') + '>' + rate.toFixed(1) + '</option>').join('') + '</select><span class="vsp-flk-setting-unit">mL/hr</span></label>' +
 '<div class="vsp-flk-setting vsp-flk-ampule-control" title="Fentanyl 앰플 수"><span class="vsp-flk-setting-name">Fentanyl</span><span class="vsp-flk-setting-short" aria-hidden="true">F</span>' + stepper('ampules', entry.ampules, 1, 1, 'Fentanyl 앰플 수') + '<span class="vsp-flk-setting-unit">A</span></div></div></div>' +
 '<div style="margin-top:2px"><div class="vsp-flk-bag" style="display:grid;grid-template-columns:minmax(130px,1fr) auto;align-items:baseline;gap:16px;padding:8px;background:#f1f5f9;border-bottom:2px solid #94a3b8">' +
-'<strong style="font-size:15px;color:#334155">IV bag</strong><strong style="font-size:18px;color:#111827;white-space:nowrap">' + r.bag + ' mL</strong></div>' +
+'<div class="vsp-flk-bag-label"><strong>IV bag</strong><label class="vsp-flk-bag-limit">최대 <select data-flk-max-bag="' + index + '" aria-label="' + esc(entry.name + ' FLK bag 최대 부피') + '">' +
+[100, 150].map((size) => '<option value="' + size + '"' + (size === entry.maxBag ? ' selected' : '') + '>' + size + ' mL</option>').join('') +
+'</select></label></div><strong style="font-size:18px;color:#111827;white-space:nowrap">' + r.bag + ' mL</strong></div>' +
 resultRow('Fentanyl CRI', r.fentanyl) + resultRow('Lidocaine', r.lidocaine) +
 resultRow('Ketamine', r.ketamine) + resultRow('NS', r.ns) +
 (entry.includeLoading ? resultRow('Fentanyl loading', r.loading) : '') + '</div>' +
@@ -1754,7 +1819,7 @@ const includeLoading = true;
 const result = calculateFlk(weight, includeLoading);
 if (!name) { error.textContent = '환자 이름을 입력하세요.'; nameInput.focus(); return; }
 if (!result) { error.textContent = '체중은 0보다 크고 250 kg 미만으로 입력하세요.'; weightInput.focus(); return; }
-flkEntries.push({ name, result, includeLoading, ampules: 1 });
+flkEntries.push({ name, result, includeLoading, ampules: 1, maxBag: 100 });
 flkDraft = { pid: '', name: '', weight: '' };
 saveFlkState();
 paintFlk(patients);
@@ -1764,8 +1829,8 @@ checkbox.onchange = () => {
 const entry = flkEntries[Number(checkbox.dataset.flkLoading)];
 if (!entry) return;
 const includeLoading = !checkbox.checked;
-const result = calculateFlk(entry.result.weight, includeLoading, entry.ampules, entry.result.rate) ||
-calculateFlk(entry.result.weight, includeLoading, entry.ampules);
+const result = calculateFlk(entry.result.weight, includeLoading, entry.ampules, entry.result.rate, entry.maxBag) ||
+calculateFlk(entry.result.weight, includeLoading, entry.ampules, null, entry.maxBag);
 if (!result) { checkbox.checked = !entry.includeLoading; return; }
 entry.includeLoading = includeLoading;
 entry.result = result;
@@ -1780,8 +1845,8 @@ const index = Number(rateControl ? input.dataset.flkRate : input.dataset.flkAmpu
 const entry = flkEntries[index];
 const ampules = rateControl ? entry.ampules : Number(input.value);
 const rate = rateControl ? Number(input.value) : entry.result.rate;
-const result = calculateFlk(entry.result.weight, entry.includeLoading, ampules, rate) ||
-(!rateControl ? calculateFlk(entry.result.weight, entry.includeLoading, ampules) : null);
+const result = calculateFlk(entry.result.weight, entry.includeLoading, ampules, rate, entry.maxBag) ||
+(!rateControl ? calculateFlk(entry.result.weight, entry.includeLoading, ampules, null, entry.maxBag) : null);
 if (!result) {
 body.querySelector('[data-flk-error="' + index + '"]').textContent = rateControl ?
 '펜타닐 사용량을 유지할 수 있는 속도를 선택하세요.' : '앰플 수는 1 이상의 정수이며 로딩 용량보다 커야 합니다.';
@@ -1789,6 +1854,19 @@ input.value = rateControl ? entry.result.rate : entry.ampules;
 return;
 }
 entry.ampules = ampules;
+entry.result = result;
+saveFlkState();
+paintFlk(patients);
+};
+});
+body.querySelectorAll('[data-flk-max-bag]').forEach((select) => {
+select.onchange = () => {
+const entry = flkEntries[Number(select.dataset.flkMaxBag)];
+const maxBag = Number(select.value);
+const result = calculateFlk(entry.result.weight, entry.includeLoading, entry.ampules, entry.result.rate, maxBag) ||
+calculateFlk(entry.result.weight, entry.includeLoading, entry.ampules, null, maxBag);
+if (!result) return;
+entry.maxBag = maxBag;
 entry.result = result;
 saveFlkState();
 paintFlk(patients);
@@ -1834,6 +1912,7 @@ const sortControl =
 const refresh = id === 'inj' ?
 '<div class="vsp-refresh-row" style="margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
 '<button id="vsp-refresh" style="font:inherit;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff">새로 확인</button>' +
+'<button id="vsp-undo-review" aria-label="변경 확인 되돌리기" title="변경 확인 되돌리기"' + (loadReviewHistory(date).length ? '' : ' disabled') + '>&#8630;</button>' +
 '<button id="vsp-concentration-toggle" aria-expanded="' + concentrationOpen + '">역가 설정</button>' +
 '<span style="font-size:13px;color:#64748b;font-weight:600">' + esc(sections[0].reviewNote || '현재 확인 시간 미기록') + '</span></div>' : '';
 const availableTimes = new Map();
@@ -1926,7 +2005,11 @@ button.onclick = () => {
 const keys = JSON.parse(decodeURIComponent(button.dataset.readyConfirm));
 const records = loadReady(date);
 const fresh = injectionDisplay(sections, selectedInjectionTime, records);
-persistReady(acknowledgePrepared(fresh, records, keys));
+if (!saveInjectionReview(date, null, acknowledgePrepared(fresh, records, keys), 'individual')) {
+alert('변경 확인을 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.');
+return;
+}
+paint(id, sections);
 };
 });
 body.querySelectorAll('[data-sort]').forEach((button) => {
@@ -1948,6 +2031,18 @@ paint(id, sections);
 };
 const refreshButton = body.querySelector('#vsp-refresh');
 if (refreshButton) refreshButton.onclick = () => show('inj', true);
+const undoButton = body.querySelector('#vsp-undo-review');
+if (undoButton) undoButton.onclick = () => {
+if (!undoInjectionReview(date)) {
+alert('변경 확인을 되돌리지 못했습니다. 기준 목록이나 브라우저 저장 공간을 확인해주세요.');
+return;
+}
+const previous = loadBaseline(date);
+sections.previousSnapshot = previous || JSON.parse(JSON.stringify(sections.snapshot));
+sections.firstCheck = !previous;
+refreshInjectionComparison(sections);
+paint(id, sections);
+};
 body.querySelectorAll('[data-patient-weight]').forEach((input) => {
 const applyWeight = () => {
 const value = Number(input.value);
