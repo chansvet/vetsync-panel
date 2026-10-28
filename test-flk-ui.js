@@ -10,7 +10,7 @@ source = source.replace("{ id: 'flk', label: 'FLK', run: flkPatients }", "{ id: 
 source = source.replace("{ id: 'inj', label: '주사', run: injections }", `{
   id: 'inj', label: '주사', run: async () => {
     window.__testInjectionReads = (window.__testInjectionReads || 0) + 1;
-    const snapshot = makeSnapshot([['오늘',17,17],['내일',9,109]].map(([tag,hour,order]) => ({ pid:'demo', patient:'테스트 환자', code:'DEMO', breed:'푸들', weight:'5 kg', cage:'A장-1',
+    const snapshot = makeSnapshot([['오늘',17,17],['내일',9,109]].map(([tag,hour,order]) => ({ pid:'demo', patient:'테스트 환자', code:'DEMO', breed:'푸들', weight:window.__testWeight || '5 kg', cage:'A장-1',
       drug:'SAM',dose:'22mpk',route:'IV',frequency:'TID',raw:'SAM 22mpk IV',note:'',instruction:'',
       tag,hour,order,cancelled:false })));
     const previousSnapshot = loadBaseline(ymd(new Date())) || JSON.parse(JSON.stringify(snapshot));
@@ -122,12 +122,22 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     assert.match(await page.locator('#vsp-stock-error').innerText(), /0보다/);
     await page.locator('#vsp-stock-drug').selectOption('Cefotaxime');
     assert.equal(await page.locator('#vsp-stock-value').inputValue(), '200');
+    await page.evaluate(() => { window.__testWeight = '5.2 kg'; });
+    await page.locator('#vsp-refresh').click();
+    assert.match(await page.locator('.vsp-patient-title').innerText(), /5.2 kg/);
+    assert.doesNotMatch(await page.locator('.vsp-patient-title').innerText(), /\b5 kg/);
+    assert.match(await page.locator('.vsp-treatment').innerText(), /0.76 mL/);
+    assert.doesNotMatch(await page.locator('.vsp-treatment').innerText(), /0.73 mL|→/);
+    assert.equal(await page.locator('.vsp-treatment s,.vsp-treatment [style*="line-through"],.vsp-patient-title [style*="line-through"]').count(), 0);
+    assert.ok(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked());
+    assert.equal(await page.locator('[data-change-prepared]').isChecked(), false);
     for (const width of [320,390,1024]) {
       await page.setViewportSize({width,height:844});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Stock controls fit at ' + width);
     }
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:'/tmp/vetsync-stock-2.4-mobile.png',fullPage:true});
+    await page.locator('.vsp-injection-patient').screenshot({path:'/tmp/vetsync-current-values-2.5.1.png'});
     await page.getByRole('button', {name:'FLK',exact:true}).click();
     await page.locator('#vsp-flk-name').fill('가상 환자');
     await page.locator('#vsp-flk-weight').fill('9.8');

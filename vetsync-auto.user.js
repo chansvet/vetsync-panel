@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.5.0
+// @version      2.5.1
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -754,7 +754,6 @@
     const volumeText = (n) => n >= 0.01 ? n.toFixed(2) : n.toPrecision(2);
     const addedLabel = () => A0 + '추가' + A1;
     const deletedLabel = () => D0 + '삭제' + D1;
-    const beforeValue = (s) => B0 + s + B1;
     const plainTimeLabel = (t) => (t.tag === '내일' ? '내일 ' : '') + t.hour + '시';
     const excluded = (times) => G0 + '제외: ' + times.map(plainTimeLabel).join(', ') + G1;
     const excludedCancelled = (times) => G0 + cancelled('제외: ' + times.map(plainTimeLabel).join(', ')) + G1;
@@ -892,10 +891,7 @@
     const allCancelled = item.times.length > 0 && active(item).length === 0;
     const oldTimes = new Map((prev ? active(prev) : []).map((t) => [timeKey(t), t]));
     const currentTimes = new Set(item.times.map(timeKey));
-    const manualCalculation = (item.manualNeeded && Object.values(item.manualNeeded).some(Boolean)) ||
-    (prev && prev.manualNeeded && Object.values(prev.manualNeeded).some(Boolean));
-    const changedDose = prev && ((!manualCalculation && JSON.stringify(calc) !== JSON.stringify(prev.calculation)) ||
-    item.dose !== prev.dose || item.route !== prev.route);
+    const hasChange = kind === 'added' || !!(prev && !sameItem(item, prev));
     const displayTimes = [...item.times].map((t) => {
     let text = t.cancelled ? (allCancelled ? excludedCancelled([t]) : excluded([t])) : timeLabel(t, item);
     if (prev && !t.cancelled && !oldTimes.has(timeKey(t))) text = orange(text);
@@ -909,17 +905,12 @@
     const amountText = calc.volume == null && item.dilution?.valid === false ?
     item.dilution.label + ' 확인 필요' : calc.text;
     const currentAmount = calc.volume != null ? calc.text + dilutionText : amountText;
-    let amount = calc.volume == null ? Q0 + amountText + Q1 : currentAmount;
-    if (changedDose && prev.calculation && prev.calculation.text !== calc.text) {
-    const previousDilution = prev.calculation.volume != null && prev.dilution && prev.dilution.valid !== false ?
-    ' + NS ' + volumeText(prev.calculation.volume * prev.dilution.nsRatio) + ' mL' : '';
-    const previousAmount = prev.calculation.volume != null ? prev.calculation.text + previousDilution : prev.calculation.text;
-    amount = beforeValue(previousAmount) + ' → ' + (calc.volume == null ? Q0 + amountText + Q1 : orange(currentAmount));
-    }
-    const route = prev && item.route !== prev.route ? beforeValue(routeLabel(prev.route) || '미기재') + '→' + orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
+    const plainAmount = calc.volume == null ? Q0 + amountText + Q1 : currentAmount;
+    const amount = hasChange && !allCancelled ? orange(plainAmount) : plainAmount;
+    const route = prev && item.route !== prev.route ? orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
     let main = '\uE030' + item.drug + '\uE031 · ' + times + (route ? ' · ' + route : '');
     if (allCancelled) main = cancelled(main);
-    else if (kind === 'added') main = orange(main);
+    else if (hasChange) main = orange(main);
     const dilutionBasis = item.dilution && item.dilution.valid !== false ? item.dilution.label : '';
     const doseBasis = calc.nonDefault ? '\uE00A' + calc.doseText + '\uE00B' + (calc.concText ? ' · ' + calc.concText : '') : calc.basis;
     const basis = M0 + amount + M1 + (doseBasis ? ' · ' + doseBasis : '') +
@@ -946,8 +937,7 @@
     else {
     const field = (now, before) => {
     if (now === before) return now;
-    if (before && now) return beforeValue(before) + '→' + orange(now);
-    return now ? orange(now) : beforeValue(before);
+    return now ? orange(now) : '';
     };
     const route = item.route === prev.route ? routeLabel(item.route) :
     field(routeLabel(item.route), routeLabel(prev.route));
@@ -970,9 +960,10 @@
     });
     const extraNow = [item.note, item.instruction].filter(Boolean).join(', ');
     const extraOld = [prev.note, prev.instruction].filter(Boolean).join(', ');
-    const extra = extraNow === extraOld ? extraNow : orange([extraOld, extraNow].filter(Boolean).join('→'));
+    const extra = extraNow === extraOld ? extraNow : extraNow ? orange(extraNow) : '';
     text = label + ' (' + times.sort((a, b) => a.order - b.order).map((t) => t.text).join(', ') + ')' +
     (extra ? ' [' + extra + ']' : '');
+    if (!sameItem(item, prev)) text = orange(text);
     }
     return text;
     }
@@ -1212,8 +1203,7 @@
     const changes = [...changeGroups.values()].map((change) => {
     const completed = change.ids.every((id) => changeIsReady(observations.get(id), completedChanges, id));
     return '<div class="vsp-ready-slot vsp-ready-changed' + (completed ? ' vsp-ready-prepared' : '') + '"><span>' + esc(change.labels.join(', ')) + '</span>' +
-    (change.before ? '<span class="vsp-ready-before">' + esc(change.before) + '</span>' : '') +
-    '<span class="vsp-ready-now">' + (change.before ? '→ ' : '') +
+    '<span class="vsp-ready-now">' +
     (change.inactive ? '<s>' + esc(change.after) + '</s>' : esc(change.after)) + '</span>' +
     '<span class="vsp-change-actions"><label class="vsp-change-prepared-control" title="' + (change.inactive ? '취소된 주사 정리 완료' : '변경된 주사 준비 완료') + '"><input type="checkbox" data-change-prepared="' + encodeURIComponent(JSON.stringify(change.ids)) + '" aria-label="' +
     esc(group.sortName + ' ' + item.drug + (change.inactive ? ' 제외분 정리 완료' : ' 변경분 준비 완료')) + '"' + (completed ? ' checked' : '') + '><span>' + (change.inactive ? '정리 완료' : '준비 완료') + '</span></label>' +
@@ -1450,7 +1440,7 @@
     .replace(new RegExp(MAN0 + '(.+?)' + MAN1, 'g'), (_, encoded) => manualHtml(encoded));
     const asText = (sections) => sections.map((s) =>
     s.heading + (s.reviewNote ? '\n' + s.reviewNote : '') + '\n' + s.groups.map((g) =>
-    (g.title ? g.title + ' ' + g.cage + (g.previousWeight ? ' [체중 ' + g.previousWeight + '→' + g.weight + ']' : '') +
+    (g.title ? g.title + ' ' + g.cage +
     (g.status ? ' [' + g.status + ']' : '') + (g.updated ? ' [처치 업데이트]' : '') + '\n  ' : '  ') +
     g.body.join('\n  ') + (g.note ? '\n  ' + g.note : '')
     ).join('\n')
@@ -1484,7 +1474,6 @@
     esc(name) + ' 체중(kg)' + '" value="' + esc(manualWeight || '') + '" style="box-sizing:border-box;width:40px;height:20px;border:1px solid #94a3b8;border-radius:3px;' +
     'background:#fff;color:#111827;padding:0 1px;text-align:center;font:700 12px/18px system-ui;vertical-align:middle">' +
     '<span style="font-size:12px;color:#64748b;font-weight:700;line-height:20px">kg</span></span>' : weightChanged ?
-    '<span style="color:#9f1239;text-decoration:line-through;text-decoration-thickness:1.5px">' + esc(previousWeight) + '</span>→' +
     '<span style="color:#b45309;font-size:15px;font-weight:800">' + esc(weight) + '</span>' :
     '<span style="color:#111827;font-size:15px;font-weight:800">' + esc(weight) + '</span>';
     return esc(name) + ' <span style="color:#64748b;font-size:14px;font-weight:500">(' +
@@ -1594,7 +1583,7 @@
     '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="vsp-brand">VETSYNC</span>' +
     '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.5.0</span>' +
+    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.5.1</span>' +
     '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
     '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1663,11 +1652,9 @@
     #vsp .vsp-ready-slot input:disabled{opacity:.4;cursor:default}
     #vsp .vsp-ready-changed{padding:5px 8px;border-left:2px solid #bd7b28;background:#fff4df;color:#84561d}
     #vsp .vsp-ready-prepared{border-left-color:#8fa89b;background:#edf3ef;color:#5e7067}
-    #vsp .vsp-ready-prepared .vsp-ready-before{color:#8b9690}
     #vsp .vsp-ready-prepared .vsp-ready-now{color:#5e7067}
     #vsp .vsp-change-prepared-control{color:#315f51;font-size:12px;font-weight:600}
     #vsp .vsp-change-actions{display:inline-flex;align-items:center;gap:8px;margin-left:auto}
-    #vsp .vsp-ready-before{color:#8a3d31;text-decoration:line-through;overflow-wrap:anywhere}
     #vsp .vsp-ready-now{font-weight:700;overflow-wrap:anywhere}
     #vsp .vsp-ready-slot button{min-height:40px;border:1px solid #e4c38e;border-radius:4px;padding:4px 8px;background:#fff;color:#84561d;font:inherit}
     #vsp .vsp-ready-slot input:focus-visible,#vsp .vsp-ready-slot button:focus-visible,#vsp #vsp-time:focus-visible{outline:2px solid #315f51;outline-offset:3px}
