@@ -5,7 +5,7 @@ const vm = require('vm');
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8');
 source = source.replace(
   "  if (!location.hostname.endsWith('vetsync4.vetu1.com')) {\n    alert('VetSync 화면에서 눌러주세요.');\n  } else if (window.__VETSYNC_BUTTON) {\n    mountButton();\n    // 화면이 다시 그려지면서 버튼이 사라질 수 있으므로 주기적으로 확인한다\n    setInterval(mountButton, 3000);\n  } else {\n    open();\n  }",
-  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, unextendedBloodRows, cache, pickInj, checkedTime, breedOf, flkValues, calculateFlk, ampuleNeeds, preparationSignature, preparationEntries, filterInjectionSnapshot, injectionDisplay, acknowledgePrepared, saveInjectionReview, undoInjectionReview, loadReviewHistory };'
+  '  globalThis.__test = { compareSnapshot, render, asText, rawItem, toHtml, patientTitleHtml, sortSections, latestWeight, yesterdayWeights, unextendedBloodRows, cache, pickInj, checkedTime, breedOf, flkValues, calculateFlk, ampuleNeeds, preparationSignature, preparationEntries, filterInjectionSnapshot, injectionDisplay, acknowledgePrepared, saveInjectionReview, undoInjectionReview, redoInjectionReview, loadReviewHistory, loadReviewState, setChangeReady };'
 );
 const context = {};
 vm.createContext(context);
@@ -272,6 +272,15 @@ assert.strictEqual(readyRecords[readyEntry.id].item.calculation.volume, .5);
 readySections.previousSnapshot = JSON.parse(JSON.stringify(readySections.snapshot));
 assert.match(context.__test.render(context.__test.injectionDisplay(readySections, '', readyRecords).display, 'inj'), /data-ready-confirm/);
 const allReadyView = context.__test.injectionDisplay(readySections, '', readyRecords);
+const changesDone = context.__test.setChangeReady(allReadyView, {}, [readyEntry.id], true);
+assert.strictEqual(Object.keys(changesDone).length, 2);
+const doneView = context.__test.injectionDisplay(readySections, '', readyRecords, changesDone);
+const doneHtml = context.__test.render(doneView.display, 'inj');
+assert.match(doneHtml, /vsp-ready-prepared/);
+assert.match(doneHtml, /data-change-prepared="[^"]+"[^>]+checked/);
+assert.match(doneHtml, /data-patient-ready="ready" checked/);
+assert.ok(!doneView.display[0].groups[0].preparationChanged[0]);
+assert.strictEqual(Object.keys(context.__test.setChangeReady(allReadyView, changesDone, [readyEntry.id], false)).length, 0);
 const reviewed = context.__test.acknowledgePrepared(allReadyView, readyRecords);
 assert.doesNotMatch(context.__test.render(context.__test.injectionDisplay(readySections, '', reviewed).display, 'inj'), /data-ready-confirm/);
 assert.ok(reviewed['@patient:ready'].completed);
@@ -283,6 +292,7 @@ const laterSections = [{ heading: '주사', groups: [] }];
 Object.assign(laterSections, {snapshot:laterChange, previousSnapshot:readySections.snapshot, states:{}});
 assert.match(context.__test.render(context.__test.injectionDisplay(laterSections, '', reviewed).display, 'inj'), /data-ready-confirm/);
 assert.strictEqual(context.__test.compareSnapshot(laterChange, readySections.snapshot, {}).changes, 1);
+assert.doesNotMatch(context.__test.render(context.__test.injectionDisplay(laterSections, '', readyRecords, changesDone).display, 'inj'), /vsp-ready-prepared/);
 // 삭제·퇴원 후 기준을 갱신해도 준비했던 주사는 남는다.
 readySections.snapshot = { checkedAt: readySnapshot.checkedAt, patients: {} };
 readySections.previousSnapshot = JSON.parse(JSON.stringify(readySections.snapshot));
@@ -351,7 +361,13 @@ assert.strictEqual(context.__test.saveInjectionReview('2026-10-07', laterChange,
 assert.deepStrictEqual([...stored], beforeFailure);
 context.localStorage.setItem = (key, value) => stored.set(key, value);
 assert.strictEqual(context.__test.undoInjectionReview('2026-10-07'), true);
-assert.deepStrictEqual([...stored.values()].map(JSON.parse), [{}, {date:'2026-10-07',entries:[]}]);
+assert.deepStrictEqual(JSON.parse([...stored.values()][0]), {});
+assert.strictEqual(context.__test.loadReviewHistory('2026-10-07').length, 0);
+assert.strictEqual(context.__test.loadReviewState('2026-10-07').redo.length, 1);
+assert.strictEqual(context.__test.redoInjectionReview('2026-10-07'), true);
+assert.strictEqual(context.__test.loadReviewHistory('2026-10-07').length, 1);
+assert.strictEqual(context.__test.loadReviewState('2026-10-07').redo.length, 0);
+assert.strictEqual(context.__test.undoInjectionReview('2026-10-07'), true);
 assert.strictEqual(context.__test.undoInjectionReview('2026-10-07'), false);
 assert.strictEqual(context.__test.loadReviewHistory('2026-10-08').length, 0);
 // Undo only the acknowledged records, retaining preparation changes made afterwards.
@@ -372,6 +388,10 @@ assert.strictEqual(undoneRecords[readyEntries[1].id].signature, readyRecords[rea
 assert.ok(context.__test.saveInjectionReview('2026-10-07', null, reviewed, 'individual'));
 assert.ok(context.__test.undoInjectionReview('2026-10-07'));
 assert.deepStrictEqual(JSON.parse(stored.get(readyStorageKey)), undoneRecords);
+assert.ok(context.__test.redoInjectionReview('2026-10-07'));
+assert.deepStrictEqual(JSON.parse(stored.get(readyStorageKey)), JSON.parse(JSON.stringify(reviewed)));
+assert.ok(context.__test.undoInjectionReview('2026-10-07'));
+assert.deepStrictEqual(JSON.parse(stored.get(readyStorageKey)), undoneRecords);
 // A failed history write must roll back both comparison and preparation records.
 const beforeHistoryFailure = [...stored];
 context.localStorage.setItem = (key, value) => {
@@ -383,6 +403,7 @@ assert.deepStrictEqual([...stored], beforeHistoryFailure);
 context.localStorage.setItem = (key, value) => stored.set(key, value);
 for (let n = 0; n < 12; n++) assert.ok(context.__test.saveInjectionReview('2026-10-07', laterChange, reviewed));
 assert.strictEqual(context.__test.loadReviewHistory('2026-10-07').length, 10);
+assert.strictEqual(context.__test.loadReviewState('2026-10-07').redo.length, 0);
 assert.match(context.__test.toHtml('이름 "테스트"'), /&quot;테스트&quot;/);
 
 context.__test.yesterdayWeights('2026-09-12', ['previous-weight']).then((weights) => {

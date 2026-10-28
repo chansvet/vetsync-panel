@@ -132,6 +132,22 @@ assert.equal(ctx.api.calculateFlk(2, true, 1, 1.5, 150), null);
 assert.equal(ctx.api.calculateFlk(4.2, true, 1, 2, 100), null);
 assert.ok(ctx.api.calculateFlk(4.2, true, 1, 2, 150).valid);
 assert.equal(ctx.api.calculateFlk(2, true, 1, null, 200), null);
+for (const weight of [2, 4.2, 9.8, 34.2, 80]) {
+  for (const includeLoading of [true, false]) for (const ampules of [1, 2]) for (const maxBag of [100,150]) {
+    const dog = ctx.api.calculateFlk(weight, includeLoading, ampules, null, maxBag, 'DOG');
+    const cat = ctx.api.calculateFlk(weight, includeLoading, ampules, null, maxBag, 'CAT');
+    assert.ok(cat.valid);
+    assert.equal(cat.bag, dog.bag);
+    assert.equal(cat.rate, dog.rate);
+    assert.equal(cat.lidocaine, 0);
+    assert.equal(cat.fentanyl, dog.fentanyl);
+    assert.equal(cat.ketamine, dog.ketamine);
+    assert.equal(cat.loading, dog.loading);
+    assert.ok(Math.abs(cat.ns - dog.ns - dog.lidocaine) < 1e-10);
+    assert.ok(Math.abs(cat.ns + cat.fentanyl + cat.ketamine - cat.bag) < 1e-10);
+  }
+}
+assert.equal(ctx.api.calculateFlk(4.2, true, 1, null, 100, ''), null);
 for (const weight of [0.1, 3.4, 9.8, 50, 80, 120]) {
   for (const includeLoading of [true, false]) for (const ampules of [1, 2, 3]) {
     const minimum = ctx.api.calculateFlk(weight, includeLoading, ampules);

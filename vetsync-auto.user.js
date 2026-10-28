@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.4.6
+// @version      2.5.0
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -353,11 +353,11 @@
     ketamineRate: 0.15, ketamineConc: 50,
     loadingDose: 0.002, loadingConc: 0.05,
     };
-    const flkValues = (weight, bag, rate, includeLoading = true, ampules = 1, maxBag = ampules > 1 ? 150 : 100) => {
+    const flkValues = (weight, bag, rate, includeLoading = true, ampules = 1, maxBag = ampules > 1 ? 150 : 100, species = 'DOG') => {
     const duration = bag / rate;
     const fentanyl = FLK.fentanylRate * weight * duration / FLK.fentanylConc;
     const loading = includeLoading ? FLK.loadingDose * weight / FLK.loadingConc : 0;
-    const lidocaine = FLK.lidocaineRate * weight * duration / FLK.lidocaineConc;
+    const lidocaine = species === 'CAT' ? 0 : FLK.lidocaineRate * weight * duration / FLK.lidocaineConc;
     const ketamine = FLK.ketamineRate * weight * duration / FLK.ketamineConc;
     const total = fentanyl + lidocaine + ketamine;
     const ns = bag - total;
@@ -368,19 +368,19 @@
     fit: total <= bag,
     ns: ns >= 0,
     };
-    return { weight, rate, bag, ampules, maxBag, duration, fentanyl, loading, fentanylTotal: fentanyl + loading,
+    return { weight, rate, bag, ampules, maxBag, species, duration, fentanyl, loading, fentanylTotal: fentanyl + loading,
     lidocaine, ketamine, total, ns, checks, valid: Object.values(checks).every(Boolean) };
     };
-    const calculateFlk = (weight, includeLoading = true, ampules = 1, selectedRate = null, maxBag = ampules > 1 ? 150 : 100) => {
+    const calculateFlk = (weight, includeLoading = true, ampules = 1, selectedRate = null, maxBag = ampules > 1 ? 150 : 100, species = 'DOG') => {
     const value = Number(weight);
     const loading = includeLoading ? 0.04 * value : 0;
-    if (!Number.isFinite(value) || !(value > 0) || !Number.isInteger(ampules) || ampules < 1 || loading >= ampules * 10 || ![100, 150].includes(maxBag)) return null;
+    if (!Number.isFinite(value) || !(value > 0) || !Number.isInteger(ampules) || ampules < 1 || loading >= ampules * 10 || ![100, 150].includes(maxBag) || !['DOG', 'CAT'].includes(species)) return null;
     const rateFloor = Math.max(1, 0.118 * value, 0.04 * value / (ampules * 10 - loading));
     let minimumRate = Math.ceil(rateFloor * 2) / 2;
-    if (!flkValues(value, 1, minimumRate, includeLoading, ampules, maxBag).valid) minimumRate += 0.5;
+    if (!flkValues(value, 1, minimumRate, includeLoading, ampules, maxBag, species).valid) minimumRate += 0.5;
     const atRate = (rate) => {
     for (let bag = maxBag; bag >= 1; bag -= 1) {
-    const result = flkValues(value, bag, rate, includeLoading, ampules, maxBag);
+    const result = flkValues(value, bag, rate, includeLoading, ampules, maxBag, species);
     if (result.valid) return result;
     }
     return null;
@@ -393,7 +393,7 @@
     if (!Number.isFinite(rate) || rate < minimumRate || rate > maximumRate || !Number.isInteger(rate * 2)) return null;
     const result = rate === minimumRate ? minimum : atRate(rate);
     if (!result) return null;
-    const nextBagFitsAmpules = flkValues(value, result.bag + 1, rate, includeLoading, ampules, maxBag).checks.fentanyl;
+    const nextBagFitsAmpules = flkValues(value, result.bag + 1, rate, includeLoading, ampules, maxBag, species).checks.fentanyl;
     return rate === minimumRate || !nextBagFitsAmpules ? { ...result, minimumRate, maximumRate } : null;
     };
     const currentHospitalId = () => {
@@ -508,6 +508,7 @@
     pid: String(chart.patient.patientId),
     name: chart.patient.name,
     code: chart.patient.hospitalPatientCode,
+    species: chart.patient.species,
     breed: breedOf(chart.patient),
     cage: chart.cageLabel || '미지정',
     weight: latestWeight(detail, chart) === '- kg' ? (previous.get(String(chart.patient.patientId)) || '') : latestWeight(detail, chart),
@@ -1127,7 +1128,25 @@
     }
     return [amount, item.route].filter(Boolean).join(' · ');
     };
-    function injectionDisplay(sections, selectedTime, records) {
+    const changeReadyKey = () => 'vetsync-changed-preparation-v1:' + currentHospitalId();
+    const loadChangeReady = (date) => {
+    try {
+    const saved = JSON.parse(localStorage.getItem(changeReadyKey()) || 'null');
+    return saved?.date === date && saved.checks && typeof saved.checks === 'object' && !Array.isArray(saved.checks) ? saved.checks : {};
+    } catch (_) { return {}; }
+    };
+    const changeIsReady = (observation, checks, id) => checks[id]?.from === observation.from && checks[id]?.to === observation.signature;
+    const setChangeReady = (view, checks, ids, completed) => {
+    const scopes = new Set(ids.map((id) => view.observations.get(id)?.scope).filter(Boolean));
+    const next = { ...checks };
+    view.observations.forEach((observation, id) => {
+    if (!scopes.has(observation.scope)) return;
+    if (!completed) delete next[id];
+    else next[id] = { pid: observation.pid, from: observation.from, to: observation.signature };
+    });
+    return next;
+    };
+    function injectionDisplay(sections, selectedTime, records, completedChanges = {}) {
     const current = filterInjectionSnapshot(sections.snapshot, '');
     const previous = filterInjectionSnapshot(sections.previousSnapshot, '');
     const entries = new Map(preparationEntries(current).map((entry) => [entry.id, entry]));
@@ -1167,10 +1186,14 @@
     const record = records[id];
     const inactive = removed || time.cancelled;
     const signature = preparationSignature(item, time, removed);
-    observations.set(id, { item, time, signature, inactive, pid: group.pid });
+    const from = record?.signature || null;
+    const observation = { item, time, signature, inactive, pid: group.pid, from,
+    scope: JSON.stringify([group.pid, item.match, from, signature, inactive]) };
+    observations.set(id, observation);
     const changed = record ? record.signature !== signature : group.prepared && !inactive && !item.conditional;
     if (!changed) return;
-    group.updated = true; group.readyChanged = true; group.preparationChanged[index] = true;
+    group.updated = true; group.readyChanged = true;
+    if (!changeIsReady(observation, completedChanges, id)) group.preparationChanged[index] = true;
     const label = (time.tag === '내일' ? '내일 ' : '') + time.hour + '시';
     const description = (value, other) => {
     const basis = value.calculation?.basis || value.dose || '';
@@ -1186,12 +1209,16 @@
     const change = changeGroups.get(key);
     change.labels.push(label); change.ids.push(id);
     });
-    const changes = [...changeGroups.values()].map((change) =>
-    '<div class="vsp-ready-slot vsp-ready-changed"><span>' + esc(change.labels.join(', ')) + '</span>' +
+    const changes = [...changeGroups.values()].map((change) => {
+    const completed = change.ids.every((id) => changeIsReady(observations.get(id), completedChanges, id));
+    return '<div class="vsp-ready-slot vsp-ready-changed' + (completed ? ' vsp-ready-prepared' : '') + '"><span>' + esc(change.labels.join(', ')) + '</span>' +
     (change.before ? '<span class="vsp-ready-before">' + esc(change.before) + '</span>' : '') +
     '<span class="vsp-ready-now">' + (change.before ? '→ ' : '') +
     (change.inactive ? '<s>' + esc(change.after) + '</s>' : esc(change.after)) + '</span>' +
-    '<button title="준비한 주사를 현재 오더와 대조한 뒤 확인" data-ready-confirm="' + encodeURIComponent(JSON.stringify(change.ids)) + '">변경 확인</button></div>').join('');
+    '<span class="vsp-change-actions"><label class="vsp-change-prepared-control" title="' + (change.inactive ? '취소된 주사 정리 완료' : '변경된 주사 준비 완료') + '"><input type="checkbox" data-change-prepared="' + encodeURIComponent(JSON.stringify(change.ids)) + '" aria-label="' +
+    esc(group.sortName + ' ' + item.drug + (change.inactive ? ' 제외분 정리 완료' : ' 변경분 준비 완료')) + '"' + (completed ? ' checked' : '') + '><span>' + (change.inactive ? '정리 완료' : '준비 완료') + '</span></label>' +
+    '<button title="준비한 주사를 현재 오더와 대조한 뒤 확인" data-ready-confirm="' + encodeURIComponent(JSON.stringify(change.ids)) + '">변경 확인</button></span></div>';
+    }).join('');
     return changes ? '<div class="vsp-ready-row">' + changes + '</div>' : '';
     });
     }));
@@ -1212,22 +1239,25 @@
     return next;
     };
     const reviewHistoryKey = () => 'vetsync-review-history-v1:' + currentHospitalId();
-    const loadReviewHistory = (date) => {
+    const loadReviewState = (date) => {
     try {
     const saved = JSON.parse(localStorage.getItem(reviewHistoryKey()) || 'null');
-    const history = saved?.date === date ? saved.entries : [];
-    return Array.isArray(history) ? history.filter((entry) => entry && entry.readyChanges &&
+    const clean = (history) => Array.isArray(history) ? history.filter((entry) => entry && entry.readyChanges &&
     ['bulk', 'individual'].includes(entry.kind) &&
     (entry.beforeBaseline === null || typeof entry.beforeBaseline === 'string') &&
     (entry.afterBaseline === null || typeof entry.afterBaseline === 'string')).slice(-10) : [];
-    } catch (_) { return []; }
+    return saved?.date === date ? { entries: clean(saved.entries), redo: clean(saved.redo) } : { entries: [], redo: [] };
+    } catch (_) { return { entries: [], redo: [] }; }
     };
-    const reviewHistoryValue = (date, history) => {
+    const loadReviewHistory = (date) => loadReviewState(date).entries;
+    const reviewHistoryValue = (date, history, forward = []) => {
     const entries = history.slice(-10);
-    let value = JSON.stringify({ date, entries });
-    while (entries.length > 1 && value.length > 500000) {
-    entries.shift();
-    value = JSON.stringify({ date, entries });
+    const redo = forward.slice(-10);
+    let value = JSON.stringify({ date, entries, redo });
+    while (entries.length + redo.length > 1 && value.length > 500000) {
+    if (entries.length) entries.shift();
+    else redo.shift();
+    value = JSON.stringify({ date, entries, redo });
     }
     return value;
     };
@@ -1271,24 +1301,29 @@
     ]);
     } catch (_) { return false; }
     };
-    const undoInjectionReview = (date) => {
+    const moveInjectionReview = (date, direction) => {
     try {
-    const history = loadReviewHistory(date);
-    const entry = history.pop();
-    if (!entry || localStorage.getItem(baselineKey(date)) !== entry.afterBaseline) return false;
+    const state = loadReviewState(date);
+    const entry = (direction === 'undo' ? state.entries : state.redo).pop();
+    const from = direction === 'undo' ? 'after' : 'before';
+    const to = direction === 'undo' ? 'before' : 'after';
+    if (!entry || localStorage.getItem(baselineKey(date)) !== entry[from + 'Baseline']) return false;
     const records = JSON.parse(localStorage.getItem(readyKey(date)) || '{}');
     Object.entries(entry.readyChanges).forEach(([key, change]) => {
-    if (JSON.stringify(records[key] || null) !== JSON.stringify(change.after)) return;
-    if (change.before === null) delete records[key];
-    else records[key] = change.before;
+    if (JSON.stringify(records[key] || null) !== JSON.stringify(change[from])) return;
+    if (change[to] === null) delete records[key];
+    else records[key] = change[to];
     });
+    (direction === 'undo' ? state.redo : state.entries).push(entry);
     return writeReviewStorage([
     [readyKey(date), JSON.stringify(records)],
-    [baselineKey(date), entry.beforeBaseline],
-    [reviewHistoryKey(), reviewHistoryValue(date, history)],
+    [baselineKey(date), entry[to + 'Baseline']],
+    [reviewHistoryKey(), reviewHistoryValue(date, state.entries, state.redo)],
     ]);
     } catch (_) { return false; }
     };
+    const undoInjectionReview = (date) => moveInjectionReview(date, 'undo');
+    const redoInjectionReview = (date) => moveInjectionReview(date, 'redo');
     const checkedTime = (value) => {
     if (!value) return '시간 미기록';
     const date = new Date(value);
@@ -1479,7 +1514,7 @@
     'background:#fef2f2;color:#b42318;border:1px solid #fecaca;text-decoration:line-through') + '">' + esc(g.status) + '</span>' : '') +
     (g.updated ? ' <span class="vsp-updated-tag" style="display:inline-block;white-space:nowrap;padding:0 5px;border:1px solid #f59e0b;border-radius:3px;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800">[변경]</span>' : '') + '</div>' : '') +
     g.body.map((b, index) => '<div class="vsp-treatment' + (g.prepared && !g.preparationChanged?.[index] ? ' vsp-treatment-prepared' : '') + '" style="padding:' + (index ? '6px' : '5px') + ' 0 ' + (injectionView ? '3px' : '5px') + ';font-size:15px;font-weight:500;line-height:1.5;' +
-    (index ? 'border-top:1px solid #e5e7eb;' : '') + '">' + toHtml(b) + (g.preparationHtml?.[index] || '') + '</div>').join('') +
+    (index ? 'border-top:1px solid #e5e7eb;' : '') + '"><div class="vsp-treatment-content">' + toHtml(b) + '</div>' + (g.preparationHtml?.[index] || '') + '</div>').join('') +
     (g.note ? '<div class="vsp-patient-note" style="margin-top:4px;color:#475569;font-weight:600">' + esc(g.note) + '</div>' : '') +
     '</div>';
     }).join('') : '<p style="color:#6b7280">해당 항목이 없습니다.</p>')
@@ -1507,9 +1542,9 @@
     const flkText = (entries) => entries.map((entry) => {
     const r = entry.result;
     return entry.name + ' (' + fixed(r.weight, 2) + ' kg)\n' +
-    'IV bag ' + r.bag + ' mL\n' +
+    (entry.species === 'CAT' ? 'FK' : 'FLK') + ' · IV bag ' + r.bag + ' mL\n' +
     'Fentanyl CRI ' + fixed(r.fentanyl, 2) + ' mL\n' +
-    'Lidocaine ' + fixed(r.lidocaine, 2) + ' mL\n' +
+    (entry.species === 'CAT' ? '' : 'Lidocaine ' + fixed(r.lidocaine, 2) + ' mL\n') +
     'Ketamine ' + fixed(r.ketamine, 2) + ' mL\n' +
     'NS ' + fixed(r.ns, 2) + ' mL\n' +
     (entry.includeLoading ? 'Fentanyl loading ' + fixed(r.loading, 2) + ' mL\n' : '로딩 제외\n') +
@@ -1559,7 +1594,7 @@
     '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="vsp-brand">VETSYNC</span>' +
     '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.4.6</span>' +
+    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.5.0</span>' +
     '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
     '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1610,12 +1645,12 @@
     #vsp [data-sort]{min-height:36px;padding:5px 12px!important;border:0!important;border-radius:4px!important;background:transparent!important;color:#41544c!important}
     #vsp [data-sort][aria-pressed="true"]{background:#315f51!important;color:#fff!important}
     #vsp #vsp-refresh{min-height:40px;padding:6px 12px!important;border-color:#bdcbc4!important;border-radius:5px!important;color:#315f51}
-    #vsp #vsp-undo-review{width:38px;height:40px;padding:0;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#315f51;font-size:23px;line-height:1;cursor:pointer}
-    #vsp #vsp-undo-review:disabled{opacity:.35;cursor:default}
+    #vsp #vsp-undo-review,#vsp #vsp-redo-review{width:38px;height:40px;padding:0;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#315f51;font-size:23px;line-height:1;cursor:pointer}
+    #vsp #vsp-undo-review:disabled,#vsp #vsp-redo-review:disabled{opacity:.35;cursor:default}
     #vsp .vsp-time-filter{display:flex;align-items:center;gap:8px;margin:0;color:#53635e;font-size:13px;font-weight:700}
     #vsp .vsp-time-filter select{min-height:40px;padding:6px 30px 6px 10px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#253632;font:inherit;font-size:16px}
     #vsp .vsp-ready-row{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:7px}
-    #vsp .vsp-treatment-prepared{opacity:.55}
+    #vsp .vsp-treatment-prepared > .vsp-treatment-content{opacity:.55}
     #vsp .vsp-patient-ready:not(.vsp-patient-updated){background:#edf1ef;border-left-color:#c6d1cb!important}
     #vsp .vsp-patient-ready:not(.vsp-patient-updated) .vsp-patient-title{color:#64746c}
     #vsp .vsp-patient-ready-control{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;width:32px;height:36px;margin-right:4px;cursor:pointer}
@@ -1627,6 +1662,11 @@
     #vsp .vsp-ready-slot input:checked:after{content:"";position:absolute;left:5px;top:2px;width:5px;height:9px;border:solid #315f51;border-width:0 2px 2px 0;transform:rotate(45deg)}
     #vsp .vsp-ready-slot input:disabled{opacity:.4;cursor:default}
     #vsp .vsp-ready-changed{padding:5px 8px;border-left:2px solid #bd7b28;background:#fff4df;color:#84561d}
+    #vsp .vsp-ready-prepared{border-left-color:#8fa89b;background:#edf3ef;color:#5e7067}
+    #vsp .vsp-ready-prepared .vsp-ready-before{color:#8b9690}
+    #vsp .vsp-ready-prepared .vsp-ready-now{color:#5e7067}
+    #vsp .vsp-change-prepared-control{color:#315f51;font-size:12px;font-weight:600}
+    #vsp .vsp-change-actions{display:inline-flex;align-items:center;gap:8px;margin-left:auto}
     #vsp .vsp-ready-before{color:#8a3d31;text-decoration:line-through;overflow-wrap:anywhere}
     #vsp .vsp-ready-now{font-weight:700;overflow-wrap:anywhere}
     #vsp .vsp-ready-slot button{min-height:40px;border:1px solid #e4c38e;border-radius:4px;padding:4px 8px;background:#fff;color:#84561d;font:inherit}
@@ -1637,6 +1677,9 @@
     #vsp .vsp-flk-form{margin:0 0 12px!important;padding:12px!important;border:1px solid #d5dfda!important;border-radius:5px!important;background:#fff!important}
     #vsp .vsp-flk-patient-picker{display:grid;gap:5px;min-width:0;margin-bottom:12px;color:#52635d;font-size:12px;font-weight:750}
     #vsp .vsp-flk-patient-picker select{width:100%;height:44px;padding:0 11px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#172522;font-size:16px}
+    #vsp .vsp-flk-picker-row{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px}
+    #vsp #vsp-flk-species{font-size:14px;padding:0 6px}
+    #vsp .vsp-flk-mode-badge{display:inline-block;margin-left:5px;color:#315f51;font-size:12px;font-weight:700}
     #vsp .vsp-flk-loading-check{display:flex;align-items:center;gap:5px;height:36px;box-sizing:border-box;padding:0 2px;color:#364a43;font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer}
     #vsp .vsp-flk-loading-check input{appearance:none;-webkit-appearance:none;position:relative;display:inline-grid;place-content:center;width:19px;height:19px;flex:none;margin:0;border:1px solid #a9b8b0;border-radius:4px;background:#fff!important;cursor:pointer}
     #vsp .vsp-flk-loading-check input:checked{border-color:#557968!important;background:#fff!important}
@@ -1729,23 +1772,24 @@
     } catch (_) { /* 저장값이 손상되어도 FLK를 새로 쓸 수 있다. */ }
     const legacyFlkIncludeLoading = savedFlkState?.includeLoading !== false;
     let flkDraft = savedFlkState?.draft && typeof savedFlkState.draft === 'object' ?
-    { pid: String(savedFlkState.draft.pid || ''), name: String(savedFlkState.draft.name || ''), weight: String(savedFlkState.draft.weight || '') } :
-    { pid: '', name: '', weight: '' };
+    { pid: String(savedFlkState.draft.pid || ''), name: String(savedFlkState.draft.name || ''), weight: String(savedFlkState.draft.weight || ''), species: savedFlkState.draft.species || 'DOG' } :
+    { pid: '', name: '', weight: '', species: 'DOG' };
     const flkEntries = (Array.isArray(savedFlkState?.entries) ? savedFlkState.entries : [])
     .filter((entry) => entry && typeof entry.name === 'string' && Number.isFinite(Number(entry.weight)) && Number(entry.weight) > 0)
     .map((entry) => {
     const includeLoading = typeof entry.includeLoading === 'boolean' ? entry.includeLoading : legacyFlkIncludeLoading;
     const ampules = Number.isInteger(entry.ampules) && entry.ampules > 0 ? entry.ampules : 1;
     const maxBag = [100, 150].includes(entry.maxBag) ? entry.maxBag : ampules > 1 ? 150 : 100;
-    return { name: entry.name, includeLoading, ampules, maxBag,
-    result: calculateFlk(Number(entry.weight), includeLoading, ampules, entry.rate ?? null, maxBag) || calculateFlk(Number(entry.weight), includeLoading, ampules, null, maxBag) };
+    const species = entry.species === 'CAT' ? 'CAT' : 'DOG';
+    return { name: entry.name, pid: entry.pid || '', species, includeLoading, ampules, maxBag,
+    result: calculateFlk(Number(entry.weight), includeLoading, ampules, entry.rate ?? null, maxBag, species) || calculateFlk(Number(entry.weight), includeLoading, ampules, null, maxBag, species) };
     }).filter((entry) => entry.result);
     const saveFlkState = () => {
     try {
     localStorage.setItem(flkStateKey, JSON.stringify({
     date: todayKey,
     entries: flkEntries.map((entry) => ({ name: entry.name, weight: entry.result.weight, includeLoading: entry.includeLoading,
-    ampules: entry.ampules, rate: entry.result.rate, maxBag: entry.maxBag })),
+    ampules: entry.ampules, rate: entry.result.rate, maxBag: entry.maxBag, species: entry.species, pid: entry.pid })),
     draft: flkDraft,
     }));
     } catch (_) { /* 저장 공간을 쓸 수 없어도 현재 화면은 유지한다. */ }
@@ -1783,7 +1827,7 @@
     const r = entry.result;
     const rates = [];
     for (let rate = r.minimumRate; rate <= r.maximumRate; rate += 0.5) {
-    if (calculateFlk(r.weight, entry.includeLoading, entry.ampules, rate, entry.maxBag)) rates.push(rate);
+    if (calculateFlk(r.weight, entry.includeLoading, entry.ampules, rate, entry.maxBag, entry.species)) rates.push(rate);
     }
     const stepper = (field, value, min, step, label) => '<span class="vsp-flk-stepper">' +
     '<button data-flk-step="' + field + '" data-index="' + index + '" data-direction="-1" aria-label="' + esc(entry.name + ' ' + label + ' 줄이기') + '"' + (value <= min ? ' disabled' : '') + '>-</button>' +
@@ -1793,6 +1837,7 @@
     '<span style="font-size:14px;color:#475569">' + label + '</span><strong style="white-space:nowrap">' + fixed(value, 2) + '<span class="vsp-flk-volume-unit"> mL</span></strong></div>';
     return '<article class="vsp-flk-result">' +
     '<div class="vsp-flk-result-title"><strong style="font-size:16px">' + esc(entry.name) +
+    (entry.species === 'CAT' ? '<span class="vsp-flk-mode-badge">FK</span>' : '') +
     '<span class="vsp-flk-patient-weight">(' + fixed(r.weight, 2) + ' kg)</span></strong>' +
     '<button class="vsp-flk-remove" data-flk-remove="' + index + '" aria-label="' + esc(entry.name) + ' 삭제" title="삭제">×</button>' +
     '<div class="vsp-flk-controls">' +
@@ -1804,14 +1849,18 @@
     '<div class="vsp-flk-bag-label"><strong>IV bag</strong><label class="vsp-flk-bag-limit">최대 <select data-flk-max-bag="' + index + '" aria-label="' + esc(entry.name + ' FLK bag 최대 부피') + '">' +
     [100, 150].map((size) => '<option value="' + size + '"' + (size === entry.maxBag ? ' selected' : '') + '>' + size + ' mL</option>').join('') +
     '</select></label></div><strong style="font-size:18px;color:#111827;white-space:nowrap">' + r.bag + ' mL</strong></div>' +
-    resultRow('Fentanyl CRI', r.fentanyl) + resultRow('Lidocaine', r.lidocaine) +
+    resultRow('Fentanyl CRI', r.fentanyl) + (entry.species === 'CAT' ? '' : resultRow('Lidocaine', r.lidocaine)) +
     resultRow('Ketamine', r.ketamine) + resultRow('NS', r.ns) +
     (entry.includeLoading ? resultRow('Fentanyl loading', r.loading) : '') + '</div>' +
     '<div data-flk-error="' + index + '" role="alert" style="color:#9b3d32;font-size:13px"></div></article>';
     }).join('') : '<p style="color:#64748b;margin-top:18px">환자를 선택하거나 이름과 체중을 입력해 추가하세요.</p>';
     body.innerHTML = '<section class="vsp-flk-form">' +
+    '<div class="vsp-flk-picker-row">' +
     '<label class="vsp-flk-patient-picker" for="vsp-flk-patient"><span>입원환자 불러오기</span>' +
     '<select id="vsp-flk-patient">' + options + '</select></label>' +
+    '<label class="vsp-flk-patient-picker" for="vsp-flk-species"><span>동물종</span><select id="vsp-flk-species">' +
+    '<option value="">종 선택</option>' + [['DOG','개 · FLK'],['CAT','고양이 · FK']].map(([value,label]) =>
+    '<option value="' + value + '"' + (value === flkDraft.species ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></label></div>' +
     '<div class="vsp-flk-entry-row">' +
     '<label style="font-size:13px;font-weight:700;color:#64748b">환자 이름<input id="vsp-flk-name" autocomplete="off" value="' + esc(flkDraft.name) + '" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 10px;font:inherit;font-size:16px" /></label>' +
     '<label style="font-size:13px;font-weight:700;color:#64748b">체중 kg<input id="vsp-flk-weight" inputmode="decimal" value="' + esc(flkDraft.weight) + '" style="box-sizing:border-box;width:100%;height:44px;margin-top:4px;border:1px solid #94a3b8;border-radius:5px;padding:0 6px;text-align:center;font:inherit;font-size:16px;font-weight:700" /></label>' +
@@ -1820,19 +1869,22 @@
     const select = body.querySelector('#vsp-flk-patient');
     const nameInput = body.querySelector('#vsp-flk-name');
     const weightInput = body.querySelector('#vsp-flk-weight');
+    const speciesInput = body.querySelector('#vsp-flk-species');
     const error = body.querySelector('#vsp-flk-error');
     const saveDraft = () => {
     flkDraft = { pid: select.value === '' ? '' : String(patients[Number(select.value)]?.pid || ''),
-    name: nameInput.value, weight: weightInput.value };
+    name: nameInput.value, weight: weightInput.value, species: speciesInput.value };
     saveFlkState();
     };
     nameInput.addEventListener('input', saveDraft);
     weightInput.addEventListener('input', saveDraft);
+    speciesInput.onchange = saveDraft;
     select.onchange = () => {
     const patient = select.value === '' ? null : patients[Number(select.value)];
     nameInput.value = patient?.name || '';
     weightInput.value = patient?.weight ? patient.weight.replace(/\s*kg$/i, '') : '';
-    flkDraft = { pid: patient?.pid ? String(patient.pid) : '', name: nameInput.value, weight: weightInput.value };
+    speciesInput.value = patient ? (['DOG','CAT'].includes(patient.species) ? patient.species : '') : flkDraft.species;
+    flkDraft = { pid: patient?.pid ? String(patient.pid) : '', name: nameInput.value, weight: weightInput.value, species: speciesInput.value };
     saveFlkState();
     error.textContent = patient && !patient.weight ? '체중을 직접 입력하세요.' : '';
     };
@@ -1840,11 +1892,13 @@
     const name = nameInput.value.trim();
     const weight = Number(weightInput.value);
     const includeLoading = true;
-    const result = calculateFlk(weight, includeLoading);
+    const species = speciesInput.value;
+    const result = calculateFlk(weight, includeLoading, 1, null, 100, species);
     if (!name) { error.textContent = '환자 이름을 입력하세요.'; nameInput.focus(); return; }
+    if (!['DOG','CAT'].includes(species)) { error.textContent = '동물종을 선택하세요.'; speciesInput.focus(); return; }
     if (!result) { error.textContent = '체중은 0보다 크고 250 kg 미만으로 입력하세요.'; weightInput.focus(); return; }
-    flkEntries.push({ name, result, includeLoading, ampules: 1, maxBag: 100 });
-    flkDraft = { pid: '', name: '', weight: '' };
+    flkEntries.push({ name, result, includeLoading, ampules: 1, maxBag: 100, species, pid: flkDraft.pid });
+    flkDraft = { pid: '', name: '', weight: '', species };
     saveFlkState();
     paintFlk(patients);
     };
@@ -1853,8 +1907,8 @@
     const entry = flkEntries[Number(checkbox.dataset.flkLoading)];
     if (!entry) return;
     const includeLoading = !checkbox.checked;
-    const result = calculateFlk(entry.result.weight, includeLoading, entry.ampules, entry.result.rate, entry.maxBag) ||
-    calculateFlk(entry.result.weight, includeLoading, entry.ampules, null, entry.maxBag);
+    const result = calculateFlk(entry.result.weight, includeLoading, entry.ampules, entry.result.rate, entry.maxBag, entry.species) ||
+    calculateFlk(entry.result.weight, includeLoading, entry.ampules, null, entry.maxBag, entry.species);
     if (!result) { checkbox.checked = !entry.includeLoading; return; }
     entry.includeLoading = includeLoading;
     entry.result = result;
@@ -1869,8 +1923,8 @@
     const entry = flkEntries[index];
     const ampules = rateControl ? entry.ampules : Number(input.value);
     const rate = rateControl ? Number(input.value) : entry.result.rate;
-    const result = calculateFlk(entry.result.weight, entry.includeLoading, ampules, rate, entry.maxBag) ||
-    (!rateControl ? calculateFlk(entry.result.weight, entry.includeLoading, ampules, null, entry.maxBag) : null);
+    const result = calculateFlk(entry.result.weight, entry.includeLoading, ampules, rate, entry.maxBag, entry.species) ||
+    (!rateControl ? calculateFlk(entry.result.weight, entry.includeLoading, ampules, null, entry.maxBag, entry.species) : null);
     if (!result) {
     body.querySelector('[data-flk-error="' + index + '"]').textContent = rateControl ?
     '펜타닐 사용량을 유지할 수 있는 속도를 선택하세요.' : '앰플 수는 1 이상의 정수이며 로딩 용량보다 커야 합니다.';
@@ -1887,8 +1941,8 @@
     select.onchange = () => {
     const entry = flkEntries[Number(select.dataset.flkMaxBag)];
     const maxBag = Number(select.value);
-    const result = calculateFlk(entry.result.weight, entry.includeLoading, entry.ampules, entry.result.rate, maxBag) ||
-    calculateFlk(entry.result.weight, entry.includeLoading, entry.ampules, null, maxBag);
+    const result = calculateFlk(entry.result.weight, entry.includeLoading, entry.ampules, entry.result.rate, maxBag, entry.species) ||
+    calculateFlk(entry.result.weight, entry.includeLoading, entry.ampules, null, maxBag, entry.species);
     if (!result) return;
     entry.maxBag = maxBag;
     entry.result = result;
@@ -1913,7 +1967,8 @@
     body.classList.remove('vsp-flk-body');
     const date = ymd(new Date(sections.snapshot?.checkedAt || Date.now()));
     const ready = id === 'inj' ? loadReady(date) : {};
-    const view = id === 'inj' ? injectionDisplay(sections, selectedInjectionTime, ready) : null;
+    const changeReady = id === 'inj' ? loadChangeReady(date) : {};
+    const view = id === 'inj' ? injectionDisplay(sections, selectedInjectionTime, ready, changeReady) : null;
     const changedPatientIds = new Set();
     if (view) {
     sections.forEach((section) => section.groups.filter((group) => group.updated)
@@ -1937,6 +1992,7 @@
     '<div class="vsp-refresh-row" style="margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
     '<button id="vsp-refresh" style="font:inherit;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff">새로 확인</button>' +
     '<button id="vsp-undo-review" aria-label="변경 확인 되돌리기" title="변경 확인 되돌리기"' + (loadReviewHistory(date).length ? '' : ' disabled') + '>&#8630;</button>' +
+    '<button id="vsp-redo-review" aria-label="변경 확인 다시 실행" title="변경 확인 다시 실행"' + (loadReviewState(date).redo.length ? '' : ' disabled') + '>&#8631;</button>' +
     '<button id="vsp-concentration-toggle" aria-expanded="' + concentrationOpen + '">역가 설정</button>' +
     '<span style="font-size:13px;color:#64748b;font-weight:600">' + esc(sections[0].reviewNote || '현재 확인 시간 미기록') + '</span></div>' : '';
     const availableTimes = new Map();
@@ -2000,8 +2056,10 @@
     }
     const timeSelect = body.querySelector('#vsp-time');
     if (timeSelect) timeSelect.onchange = () => { selectedInjectionTime = timeSelect.value; paint(id, sections); };
-    const persistReady = (records) => {
-    if (!saveReady(date, records)) alert('준비 기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.');
+    const persistReady = (records, changes) => {
+    const saved = changes ? writeReviewStorage([[readyKey(date), JSON.stringify(records)],
+    [changeReadyKey(), JSON.stringify({ date, checks: changes })]]) : saveReady(date, records);
+    if (!saved) alert('준비 기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.');
     paint(id, sections);
     };
     body.querySelectorAll('[data-patient-ready]').forEach((checkbox) => {
@@ -2021,7 +2079,21 @@
     item: { ...entry.item, times: [entry.time] }, time: entry.time, signature: entry.signature, preparedAt };
     });
     }
-    persistReady(records);
+    const changes = Object.fromEntries(Object.entries(loadChangeReady(date)).filter(([, record]) => record.pid !== pid));
+    persistReady(records, changes);
+    };
+    });
+    body.querySelectorAll('[data-change-prepared]').forEach((checkbox) => {
+    checkbox.onchange = () => {
+    const ids = JSON.parse(decodeURIComponent(checkbox.dataset.changePrepared));
+    const records = loadReady(date);
+    const checks = loadChangeReady(date);
+    const fresh = injectionDisplay(sections, '', records, checks);
+    const next = setChangeReady(fresh, checks, ids, checkbox.checked);
+    if (!writeReviewStorage([[changeReadyKey(), JSON.stringify({ date, checks: next })]])) {
+    alert('변경분 준비 기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.');
+    }
+    paint(id, sections);
     };
     });
     body.querySelectorAll('[data-ready-confirm]').forEach((button) => {
@@ -2055,10 +2127,11 @@
     };
     const refreshButton = body.querySelector('#vsp-refresh');
     if (refreshButton) refreshButton.onclick = () => show('inj', true);
-    const undoButton = body.querySelector('#vsp-undo-review');
-    if (undoButton) undoButton.onclick = () => {
-    if (!undoInjectionReview(date)) {
-    alert('변경 확인을 되돌리지 못했습니다. 기준 목록이나 브라우저 저장 공간을 확인해주세요.');
+    ['undo', 'redo'].forEach((direction) => {
+    const button = body.querySelector('#vsp-' + direction + '-review');
+    if (button) button.onclick = () => {
+    if (!(direction === 'undo' ? undoInjectionReview(date) : redoInjectionReview(date))) {
+    alert('변경 확인 기록을 복원하지 못했습니다. 기준 목록이나 브라우저 저장 공간을 확인해주세요.');
     return;
     }
     const previous = loadBaseline(date);
@@ -2067,6 +2140,7 @@
     refreshInjectionComparison(sections);
     paint(id, sections);
     };
+    });
     body.querySelectorAll('[data-patient-weight]').forEach((input) => {
     const applyWeight = () => {
     const value = Number(input.value);

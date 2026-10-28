@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 // Serve only synthetic patients; the test never connects to VetSync.
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8').replace('/* DOSE_ENGINE */',
   fs.readFileSync('dose-engine.js', 'utf8') + '\nconst doseEngine = createDoseEngine(' + fs.readFileSync('drug-defaults.json', 'utf8') + ');');
-source = source.replace("{ id: 'flk', label: 'FLK', run: flkPatients }", "{ id: 'flk', label: 'FLK', run: async () => [] }");
+source = source.replace("{ id: 'flk', label: 'FLK', run: flkPatients }", "{ id: 'flk', label: 'FLK', run: async () => [{pid:'cat',name:'고양이 예시',weight:'4.2 kg',cage:'C장-1',species:'CAT'},{pid:'dog',name:'강아지 예시',weight:'4.2 kg',cage:'A장-1',species:'DOG'},{pid:'unknown',name:'종 확인 예시',weight:'4.2 kg',cage:'B장-1'}] }");
 source = source.replace("{ id: 'inj', label: '주사', run: injections }", `{
   id: 'inj', label: '주사', run: async () => {
     window.__testInjectionReads = (window.__testInjectionReads || 0) + 1;
@@ -39,6 +39,7 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.route('https://**/*', (route) => route.abort());
     await page.goto('http://127.0.0.1:' + server.address().port);
     assert.ok(await page.locator('#vsp-undo-review').isDisabled());
+    assert.ok(await page.locator('#vsp-redo-review').isDisabled());
     await page.getByRole('button', {name:'역가 설정',exact:true}).click();
     await page.locator('#vsp-stock-value').fill('100');
     await page.getByRole('button', {name:'저장',exact:true}).click();
@@ -50,16 +51,43 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.locator('#vsp-undo-review').click();
     assert.equal(await page.locator('#vsp-accept').count(), 1);
     assert.equal(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked(), false);
+    assert.ok(await page.locator('#vsp-redo-review').isEnabled());
+    await page.locator('#vsp-redo-review').click();
+    assert.equal(await page.locator('#vsp-accept').count(), 0);
+    await page.locator('#vsp-undo-review').click();
     await page.locator('#vsp-accept').click();
+    assert.ok(await page.locator('#vsp-redo-review').isDisabled());
     await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).check();
     await page.locator('#vsp-stock-value').fill('150');
     await page.getByRole('button', {name:'저장',exact:true}).click();
     assert.equal(await page.locator('[data-ready-confirm]').count(), 1);
+    assert.equal(await page.locator('[data-change-prepared]').isChecked(), false);
+    await page.locator('#vsp-time').selectOption('오늘|17');
+    await page.locator('[data-change-prepared]').check();
+    assert.ok(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked());
+    await page.locator('#vsp-time').selectOption('내일|9');
+    assert.ok(await page.locator('[data-change-prepared]').isChecked());
+    assert.equal(await page.locator('.vsp-ready-prepared').count(), 1);
+    await page.locator('#vsp-time').selectOption('');
+    await page.reload();
+    assert.ok(await page.locator('[data-change-prepared]').isChecked());
+    await page.getByRole('button', {name:'역가 설정',exact:true}).click();
+    await page.locator('#vsp-stock-value').fill('125');
+    await page.getByRole('button', {name:'저장',exact:true}).click();
+    assert.equal(await page.locator('[data-change-prepared]').isChecked(), false);
+    assert.ok(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked());
+    await page.locator('#vsp-stock-value').fill('150');
+    await page.getByRole('button', {name:'저장',exact:true}).click();
     await page.locator('[data-ready-confirm]').click();
     assert.equal(await page.locator('[data-ready-confirm]').count(), 0);
     await page.locator('#vsp-undo-review').click();
     assert.equal(await page.locator('[data-ready-confirm]').count(), 1);
     assert.equal(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked(), true);
+    assert.ok(await page.locator('[data-change-prepared]').isChecked());
+    await page.reload();
+    await page.locator('#vsp-redo-review').click();
+    assert.equal(await page.locator('[data-ready-confirm]').count(), 0);
+    await page.locator('#vsp-undo-review').click();
     await page.locator('#vsp-time').selectOption('오늘|17');
     const readsBefore = await page.evaluate(() => window.__testInjectionReads);
     await page.locator('#vsp-accept').click();
@@ -180,6 +208,25 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     assert.equal(await page.locator('.vsp-flk-bag > strong').nth(4).innerText(), '124 mL');
     await page.locator('[data-flk-max-bag="4"]').selectOption('100');
     assert.equal(await page.locator('.vsp-flk-bag > strong').nth(4).innerText(), '100 mL');
+    await page.locator('#vsp-flk-patient').selectOption('0');
+    assert.equal(await page.locator('#vsp-flk-species').inputValue(), 'CAT');
+    await page.getByRole('button', {name:'추가',exact:true}).click();
+    const catResult = page.locator('.vsp-flk-result').nth(5);
+    assert.equal(await catResult.getByText('Lidocaine', {exact:true}).count(), 0);
+    assert.equal(await catResult.locator('.vsp-flk-mode-badge').innerText(), 'FK');
+    const nsOf = async (row) => parseFloat(await row.locator('.vsp-flk-value-row').filter({hasText:/^NS/}).locator('strong').innerText());
+    const dogNS = await nsOf(page.locator('.vsp-flk-result').nth(2));
+    const dogLidocaine = parseFloat(await page.locator('.vsp-flk-result').nth(2).getByText('Lidocaine', {exact:true}).locator('..').locator('strong').innerText());
+    assert.ok(Math.abs(await nsOf(catResult) - dogNS - dogLidocaine) < .011);
+    await page.reload();
+    await page.getByRole('button', {name:'FLK',exact:true}).click();
+    assert.equal(await page.locator('.vsp-flk-result').nth(5).getByText('Lidocaine',{exact:true}).count(), 0);
+    assert.equal(await page.locator('.vsp-flk-result').nth(0).getByText('Lidocaine',{exact:true}).count(), 1);
+    await page.locator('#vsp-flk-patient').selectOption('2');
+    assert.equal(await page.locator('#vsp-flk-species').inputValue(), '');
+    await page.getByRole('button', {name:'추가',exact:true}).click();
+    assert.match(await page.locator('#vsp-flk-error').innerText(), /동물종/);
+    assert.equal(await page.locator('.vsp-flk-result').count(), 6);
     for (const width of [320,390,1024]) {
       await page.setViewportSize({width,height:844});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No overflow at ' + width);
@@ -203,6 +250,7 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.locator('.vsp-flk-result').first().scrollIntoViewIfNeeded();
     await page.screenshot({path:'/tmp/vetsync-flk-2.4.5-desktop.png',fullPage:true});
     await page.locator('.vsp-flk-result').nth(2).screenshot({path:'/tmp/vetsync-flk-2.4.5-winter.png'});
+    await page.locator('.vsp-flk-result').nth(5).screenshot({path:'/tmp/vetsync-fk-2.5.0-cat.png'});
     assert.deepEqual(errors, []);
     console.log('FLK controls, per-patient persistence, stored strengths and mobile layout passed');
   } finally {
