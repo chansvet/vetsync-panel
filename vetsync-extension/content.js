@@ -869,7 +869,9 @@ const active = (x) => x.times.filter((t) => !t.cancelled);
 const allCancelled = item.times.length > 0 && active(item).length === 0;
 const oldTimes = new Map((prev ? active(prev) : []).map((t) => [timeKey(t), t]));
 const currentTimes = new Set(item.times.map(timeKey));
-const hasChange = kind === 'added' || !!(prev && !sameItem(item, prev));
+const amountChanged = kind === 'added' || !!(prev &&
+(calc.volume !== prev.calculation?.volume || calc.text !== prev.calculation?.text ||
+JSON.stringify(item.dilution) !== JSON.stringify(prev.dilution)));
 const displayTimes = [...item.times].map((t) => {
 let text = t.cancelled ? (allCancelled ? excludedCancelled([t]) : excluded([t])) : timeLabel(t, item);
 if (prev && !t.cancelled && !oldTimes.has(timeKey(t))) text = orange(text);
@@ -884,16 +886,19 @@ const amountText = calc.volume == null && item.dilution?.valid === false ?
 item.dilution.label + ' 확인 필요' : calc.text;
 const currentAmount = calc.volume != null ? calc.text + dilutionText : amountText;
 const plainAmount = calc.volume == null ? Q0 + amountText + Q1 : currentAmount;
-const amount = hasChange && !allCancelled ? orange(plainAmount) : plainAmount;
+const amount = amountChanged && !allCancelled ? orange(plainAmount) : plainAmount;
 const route = prev && item.route !== prev.route ? orange(routeLabel(item.route) || '미기재') : routeLabel(item.route);
 let main = '\uE030' + item.drug + '\uE031 · ' + times + (route ? ' · ' + route : '');
 if (allCancelled) main = cancelled(main);
-else if (hasChange) main = orange(main);
+else if (kind === 'added') main = orange(main);
 const dilutionBasis = item.dilution && item.dilution.valid !== false ? item.dilution.label : '';
 const doseBasis = calc.nonDefault ? '\uE00A' + calc.doseText + '\uE00B' + (calc.concText ? ' · ' + calc.concText : '') : calc.basis;
-const basis = M0 + amount + M1 + (doseBasis ? ' · ' + doseBasis : '') +
+const note = [item.note, item.instruction].filter(Boolean).join(', ');
+const noteChanged = prev && (item.note !== prev.note || item.instruction !== prev.instruction);
+const basisChanged = prev && (item.dose !== prev.dose || calc.basis !== prev.calculation?.basis);
+const basis = M0 + amount + M1 + (doseBasis ? ' · ' + (basisChanged ? orange(doseBasis) : doseBasis) : '') +
 (dilutionBasis ? ' · ' + dilutionBasis : '') +
-(item.note || item.instruction ? ' · ' + [item.note, item.instruction].filter(Boolean).join(', ') : '');
+(note ? ' · ' + (noteChanged ? orange(note) : note) : '');
 return (kind === 'removed' ? cancelled(main) : main) +
 (basis ? '\n' + S0 + (kind === 'removed' || allCancelled ? cancelled(basis) : basis) + S1 : '') +
 (kind === 'removed' ? '' : manualMarker(item));
@@ -941,7 +946,6 @@ const extraOld = [prev.note, prev.instruction].filter(Boolean).join(', ');
 const extra = extraNow === extraOld ? extraNow : extraNow ? orange(extraNow) : '';
 text = label + ' (' + times.sort((a, b) => a.order - b.order).map((t) => t.text).join(', ') + ')' +
 (extra ? ' [' + extra + ']' : '');
-if (!sameItem(item, prev)) text = orange(text);
 }
 return text;
 }
@@ -1169,25 +1173,14 @@ if (!changed) return;
 group.updated = true; group.readyChanged = true;
 if (!changeIsReady(observation, completedChanges, id)) group.preparationChanged[index] = true;
 const label = (time.tag === '내일' ? '내일 ' : '') + time.hour + '시';
-const description = (value, other) => {
-const basis = value.calculation?.basis || value.dose || '';
-const otherBasis = other.calculation?.basis || other.dose || '';
-return [readyAmount(value), basis !== otherBasis ? basis : '',
-value.note !== other.note ? value.note : '',
-value.instruction !== other.instruction ? value.instruction : ''].filter(Boolean).join(' · ');
-};
-const before = record ? description(record.item, item) : '';
-const after = description(item, record?.item || item);
-const key = JSON.stringify([before, after, inactive]);
-if (!changeGroups.has(key)) changeGroups.set(key, { before, after, inactive, labels: [], ids: [] });
+const key = inactive ? 'inactive' : 'active';
+if (!changeGroups.has(key)) changeGroups.set(key, { inactive, labels: [], ids: [] });
 const change = changeGroups.get(key);
 change.labels.push(label); change.ids.push(id);
 });
 const changes = [...changeGroups.values()].map((change) => {
 const completed = change.ids.every((id) => changeIsReady(observations.get(id), completedChanges, id));
-return '<div class="vsp-ready-slot vsp-ready-changed' + (completed ? ' vsp-ready-prepared' : '') + '"><span>' + esc(change.labels.join(', ')) + '</span>' +
-'<span class="vsp-ready-now">' +
-(change.inactive ? '<s>' + esc(change.after) + '</s>' : esc(change.after)) + '</span>' +
+return '<div class="vsp-ready-slot vsp-ready-changed' + (completed ? ' vsp-ready-prepared' : '') + '" title="' + esc(change.labels.join(', ')) + '">' +
 '<span class="vsp-change-actions"><label class="vsp-change-prepared-control" title="' + (change.inactive ? '취소된 주사 정리 완료' : '변경된 주사 준비 완료') + '"><input type="checkbox" data-change-prepared="' + encodeURIComponent(JSON.stringify(change.ids)) + '" aria-label="' +
 esc(group.sortName + ' ' + item.drug + (change.inactive ? ' 제외분 정리 완료' : ' 변경분 준비 완료')) + '"' + (completed ? ' checked' : '') + '><span>' + (change.inactive ? '정리 완료' : '준비 완료') + '</span></label>' +
 '<button title="준비한 주사를 현재 오더와 대조한 뒤 확인" data-ready-confirm="' + encodeURIComponent(JSON.stringify(change.ids)) + '">변경 확인</button></span></div>';
@@ -1570,7 +1563,7 @@ box.innerHTML =
 '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
 '<span class="vsp-brand">VETSYNC</span>' +
 '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-'<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.0</span>' +
+'<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.1</span>' +
 '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
 '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1628,7 +1621,9 @@ panelStyle.textContent = `
 #vsp #vsp-undo-review:disabled,#vsp #vsp-redo-review:disabled{opacity:.35;cursor:default}
 #vsp .vsp-time-filter{display:flex;align-items:center;gap:8px;margin:0;color:#53635e;font-size:13px;font-weight:700}
 #vsp .vsp-time-filter select{min-height:40px;padding:6px 30px 6px 10px;border:1px solid #bdcbc4;border-radius:5px;background:#fff;color:#253632;font:inherit;font-size:16px}
-#vsp .vsp-ready-row{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:7px}
+#vsp .vsp-injection-patient .vsp-treatment{display:flex;align-items:center;flex-wrap:wrap;gap:2px 12px}
+#vsp .vsp-treatment-content{min-width:0;flex:1 1 210px}
+#vsp .vsp-ready-row{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 8px;margin-left:auto;max-width:100%}
 #vsp .vsp-treatment-prepared > .vsp-treatment-content{opacity:.55}
 #vsp .vsp-patient-ready:not(.vsp-patient-updated){background:#edf1ef;border-left-color:#c6d1cb!important}
 #vsp .vsp-patient-ready:not(.vsp-patient-updated) .vsp-patient-title{color:#64746c}
@@ -1640,12 +1635,12 @@ panelStyle.textContent = `
 #vsp .vsp-ready-slot input{appearance:none;-webkit-appearance:none;width:18px;height:18px;flex:none;position:relative;border:1px solid #a9b8b0;border-radius:3px;background:#fff;margin:0}
 #vsp .vsp-ready-slot input:checked:after{content:"";position:absolute;left:5px;top:2px;width:5px;height:9px;border:solid #315f51;border-width:0 2px 2px 0;transform:rotate(45deg)}
 #vsp .vsp-ready-slot input:disabled{opacity:.4;cursor:default}
-#vsp .vsp-ready-changed{padding:5px 8px;border-left:2px solid #bd7b28;background:#fff4df;color:#84561d}
-#vsp .vsp-ready-prepared{border-left-color:#8fa89b;background:#edf3ef;color:#5e7067}
-#vsp .vsp-ready-prepared .vsp-ready-now{color:#5e7067}
+#vsp .vsp-ready-changed{color:#84561d}
+#vsp .vsp-ready-changed:not(.vsp-ready-prepared) .vsp-change-prepared-control{color:#945b18}
+#vsp .vsp-ready-changed:not(.vsp-ready-prepared) input{border-color:#bd7b28;background:#fff8e9}
+#vsp .vsp-ready-prepared{color:#5e7067}
 #vsp .vsp-change-prepared-control{color:#315f51;font-size:12px;font-weight:600}
 #vsp .vsp-change-actions{display:inline-flex;align-items:center;gap:8px;margin-left:auto}
-#vsp .vsp-ready-now{font-weight:700;overflow-wrap:anywhere}
 #vsp .vsp-ready-slot button{min-height:40px;border:1px solid #e4c38e;border-radius:4px;padding:4px 8px;background:#fff;color:#84561d;font:inherit}
 #vsp .vsp-ready-slot input:focus-visible,#vsp .vsp-ready-slot button:focus-visible,#vsp #vsp-time:focus-visible{outline:2px solid #315f51;outline-offset:3px}
 #vsp .vsp-first-check{padding:6px 10px!important;border:0!important;background:#eef4f0!important;color:#3e6654!important;font-size:13px;line-height:1.5}

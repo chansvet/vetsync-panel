@@ -133,6 +133,9 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     assert.match(await page.locator('.vsp-patient-title').innerText(), /5.2 kg/);
     assert.doesNotMatch(await page.locator('.vsp-patient-title').innerText(), /\b5 kg/);
     assert.match(await page.locator('.vsp-treatment').innerText(), /0.76 mL/);
+    assert.equal((await page.locator('.vsp-treatment').innerText()).match(/0.76 mL/g).length, 1);
+    assert.equal(await page.locator('.vsp-ready-now').count(), 0);
+    assert.equal(await page.locator('.vsp-treatment-content strong').first().evaluate((el) => getComputedStyle(el).color), 'rgb(37, 54, 50)');
     assert.doesNotMatch(await page.locator('.vsp-treatment').innerText(), /0.73 mL|→/);
     assert.equal(await page.locator('.vsp-treatment s,.vsp-treatment [style*="line-through"],.vsp-patient-title [style*="line-through"]').count(), 0);
     assert.ok(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked());
@@ -143,6 +146,10 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     }
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:'/tmp/vetsync-stock-2.4-mobile.png',fullPage:true});
+    await page.locator('.vsp-injection-patient').first().screenshot({path:'/tmp/vetsync-changes-2.6.1-mobile.png'});
+    await page.setViewportSize({width:1024,height:844});
+    await page.locator('.vsp-injection-patient').first().screenshot({path:'/tmp/vetsync-changes-2.6.1-desktop.png'});
+    await page.setViewportSize({width:390,height:844});
     await page.locator('.vsp-injection-patient').screenshot({path:'/tmp/vetsync-current-values-2.5.1.png'});
     await page.getByRole('button', {name:'FLK',exact:true}).click();
     await page.locator('#vsp-flk-name').fill('가상 환자');

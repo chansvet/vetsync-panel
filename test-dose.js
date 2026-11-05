@@ -250,6 +250,7 @@ const diff = ctx.api.compareSnapshot(revised, sam, {});
 assert.equal(diff.changes, 1);
 const html = ctx.api.render([{heading: '주사', groups: diff.normal}]);
 assert.match(html, /color:#b45309[^>]+>0\.88 mL/);
+assert.doesNotMatch(html, /color:#b45309[^>]+><strong[^>]*>SAM/);
 assert.doesNotMatch(html, /0\.73 mL|line-through/);
 assert.doesNotMatch(html, /추가 준비|용량·경로 재확인|\[추가\]|\[삭제\]/);
 assert.match(html, /color:#b45309[^>]+><strong[^>]*>Maropitant<\/strong> · 21시 · IV/);
