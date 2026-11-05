@@ -13,7 +13,7 @@ const createDoseEngine = (drugs) => {
     ['Hydroxocobalamin', 'hydroxo', 'hydrocobalamin', 'cobalamin', 'B12', '비타민B12'],
     ['Levetiracetam', 'leve'],
     ['Chlorpheniramine', 'chloropheniramine', 'chlorpeniramine', '클로르페니라민'],
-    ['Meloxicam', 'melo'], ['Meropenem', 'mero', '메로페넴'],
+    ['Meloxicam', 'melo'], ['Meropenem', 'mero', 'mereopenem', '메로페넴'],
     ['Furosemide', 'furo', '퓨로세마이드', '라식스'],
     ['Cefotaxime', '세포탁심'], ['Amikacin', '아미카신'],
   ];
@@ -41,6 +41,7 @@ const createDoseEngine = (drugs) => {
     const drug = find(name);
     const fail = (reason) => ({ text: reason, basis: written || '', volume: null });
     let dose = String(overrides.written || written || '').replace(/\s/g, '').toLowerCase();
+    dose = dose.replace(/units?\/kg$/, 'u/kg').replace(/mp$/, 'mpk');
     if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(dose)) dose += 'mpk';
     if (dose.startsWith('.')) dose = '0' + dose;
     // Conflicting or additional dosing instructions must not silently use a default.

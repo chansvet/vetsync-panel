@@ -6,6 +6,7 @@ const { chromium } = require('playwright');
 // Serve only synthetic patients; the test never connects to VetSync.
 let source = fs.readFileSync('vetsync-panel.src.js', 'utf8').replace('/* DOSE_ENGINE */',
   fs.readFileSync('dose-engine.js', 'utf8') + '\nconst doseEngine = createDoseEngine(' + fs.readFileSync('drug-defaults.json', 'utf8') + ');');
+source = source.replace('/* CALCULATOR_APP */', require('./calculator-embed-build')());
 source = source.replace("{ id: 'flk', label: 'FLK', run: flkPatients }", "{ id: 'flk', label: 'FLK', run: async () => [{pid:'cat',name:'고양이 예시',weight:'4.2 kg',cage:'C장-1',species:'CAT'},{pid:'dog',name:'강아지 예시',weight:'4.2 kg',cage:'A장-1',species:'DOG'},{pid:'unknown',name:'종 확인 예시',weight:'4.2 kg',cage:'B장-1'}] }");
 source = source.replace("{ id: 'inj', label: '주사', run: injections }", `{
   id: 'inj', label: '주사', run: async () => {
@@ -27,6 +28,7 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
 
 (async () => {
   const server = http.createServer((req, res) => {
+    if (req.url !== '/calculator') res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self'");
     res.setHeader('Content-Type', req.url === '/panel.js' ? 'text/javascript' : 'text/html');
     res.end(req.url === '/calculator' ? fs.readFileSync('../vet_calculator/index.html', 'utf8') : req.url === '/panel.js' ? source : '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="/panel.js" defer></script><body></body>');
   });
@@ -276,21 +278,31 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.locator('.vsp-flk-result').nth(5).screenshot({path:'/tmp/vetsync-fk-2.5.0-cat.png'});
     await page.getByRole('button', {name:'계산기',exact:true}).click();
     await page.locator('#vsp-calc-patient').selectOption('0');
-    assert.equal(await page.locator('#vsp-calc-weight').inputValue(), '5.2');
+    const calc = page.frameLocator('#vsp-calculator-frame');
+    assert.equal(await calc.locator('#weightInput').inputValue(), '5.2');
     assert.equal(await page.locator('#vsp-calc-open').count(), 0);
-    await page.locator('#vsp-calc-search').fill('meto');
-    assert.match(await page.locator('#vsp-calc-results').innerText(), /5 mg\/mL/);
-    assert.match(await page.locator('#vsp-calc-results').innerText(), /0.52 mL/);
-    await page.locator('#vsp-calc-weight').fill('7.3');
-    assert.match(await page.locator('#vsp-calc-results').innerText(), /0.73 mL/);
-    await page.locator('[data-calc-dose]').fill('1');
-    assert.match(await page.locator('#vsp-calc-results').innerText(), /1.46 mL/);
-    await page.locator('[data-calc-dose]').fill('');
-    assert.match(await page.locator('#vsp-calc-results').innerText(), /용량 확인 필요/);
-    await page.locator('[data-calc-dose]').fill('0.5');
+    await calc.locator('#searchInput').fill('meto');
+    await calc.locator('.drug-header').click();
+    assert.equal(await calc.locator('.result-value').innerText(), '0.52');
+    await calc.locator('#weightInput').fill('7.3');
+    assert.equal(await calc.locator('.result-value').innerText(), '0.73');
+    await calc.locator('.dose-input').fill('1');
+    await calc.locator('.dose-input').dispatchEvent('change');
+    assert.equal(await calc.locator('.result-value').innerText(), '1.46');
+    await calc.locator('#searchInput').fill('');
+    await calc.locator('[data-tab="anes"]').click();
+    assert.ok(await calc.locator('.drug-card').count() > 0);
+    await calc.locator('.drug-header').first().click();
+    await calc.locator('.summary-btn').click();
+    assert.ok(await calc.locator('#modalOverlay').isVisible());
+    await calc.locator('#modalOverlay .modal-close').click();
+    await calc.getByRole('button', {name:'설정',exact:true}).click();
+    assert.ok(await calc.locator('#settingsOverlay').isVisible());
+    await calc.locator('#settingsOverlay .modal-close').click();
     for (const width of [320,390,1024]) {
       await page.setViewportSize({width,height:844});
       assert.ok(await page.locator('#vsp').evaluate((el) => el.scrollWidth <= el.clientWidth), 'Calculator panel fits ' + width);
+      assert.ok(await calc.locator('html').evaluate((el) => el.scrollWidth <= el.clientWidth), 'Original calculator fits ' + width);
     }
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:'/tmp/vetsync-calculator-2.6.0.png',fullPage:true});

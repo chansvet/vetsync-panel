@@ -7,7 +7,8 @@
 const fs = require('fs');
 
 const src = fs.readFileSync('vetsync-panel.src.js', 'utf8').replace('/* DOSE_ENGINE */',
-  fs.readFileSync('dose-engine.js', 'utf8') + '\nconst doseEngine = createDoseEngine(' + fs.readFileSync('drug-defaults.json', 'utf8') + ');');
+  fs.readFileSync('dose-engine.js', 'utf8') + '\nconst doseEngine = createDoseEngine(' + fs.readFileSync('drug-defaults.json', 'utf8') + ');')
+  .replace('/* CALCULATOR_APP */', require('./calculator-embed-build')());
 
 // 블록 주석과 줄 전체가 주석인 줄만 걷어낸다. 문자열이나 정규식 안의 // 는 건드리지 않는다.
 const stripped = src
@@ -25,7 +26,7 @@ fs.writeFileSync('vetsync-panel.bookmarklet.txt', url);
 
 const USERSCRIPT_BASE = 'https://chansvet.github.io/vetsync-panel';
 const AUTO_URL = 'https://vetsync4.vetu1.com/?vetsync-panel=1';
-const USERSCRIPT_VERSION = '2.6.2';
+const USERSCRIPT_VERSION = '2.6.3';
 const userscriptMeta = `// ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet

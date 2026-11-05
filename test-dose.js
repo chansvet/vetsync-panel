@@ -33,6 +33,16 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
   'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,dilutionFrom,isInjection,pickInj,isLabAtDraw,noteOf,labNameOf,flkValues,calculateFlk,ampuleNeeds};})();';
 const ctx = { doseEngine: engine };
 vm.runInNewContext(source, ctx);
+assert.equal(ctx.api.labNameOf({displayName:'채혈 : cbc, 혈액형검사, 혈액도말'}), 'cbc, 혈액형검사, 혈액도말');
+assert.equal(ctx.api.noteOf({displayName:'채혈 : cbc, 혈액형검사, 혈액도말'}), '');
+assert.equal(ctx.api.isLabAtDraw({displayName:'혈액형검사',cells:[{hourSlot:9,status:'PLANNED'}]}), true);
+assert.equal(ctx.api.parseDrug('dalteparin 150unit/kg').dose, '150U/kg');
+assert.equal(engine.calculate('dalteparin', '150unit/kg', '5 kg').text, '0.30 mL');
+assert.equal(ctx.api.parseDrug('metoclopramide 0.5mp').dose, '0.5mpk');
+assert.equal(ctx.api.parseDrug('mereopenem 천천히').note, '천천히');
+assert.equal(engine.find(ctx.api.parseDrug('mereopenem 천천히').drug).name, 'Meropenem');
+assert.equal(ctx.api.isInjection('metoclopramide 0.5mp'), true);
+assert.equal(ctx.api.isInjection('mereopenem 천천히'), true);
 assert.equal(ctx.api.isLabAtDraw({displayName:'바로박 체크 PCV',cells:[{hourSlot:9,status:'PLANNED'}]}), false);
 assert.equal(ctx.api.isLabAtDraw({displayName:'PCV',cells:[{hourSlot:9,status:'PLANNED'}]}), true);
 assert.equal(ctx.api.weightValue('오후 9시 퇴원'), '');
