@@ -355,13 +355,14 @@
   const isInjection = (name) => {
     const n = (name || '').trim();
     if (!n || NONAME.test(n)) return false;
+    if (/\bnebul(?:izer|ization)?\b|네뷸|네불/i.test(n)) return false;
     if (FLUID_ORDER.test(n)) return false;
     if (SKIP.test(n) || PROC.test(n) || CRI.test(n) || EYE.test(n) || NOTINJ.test(n) || ORAL.test(n)) return false;
     return ROUTE.test(n) || KNOWN.test(n) || HYDROXOCOBALAMIN.test(n) || LEVETIRACETAM.test(n) || /vitamin\s*k|\bamikacin\b|아미카신|세포탁심/i.test(n);
   };
 
   const frequencyFrom = (text) => {
-    const value = String(text || '');
+    const value = String(text || '').replace(/\b([sbtq])\.i\.d\.?/ig, '$1id');
     const named = value.match(/\b(sid|bid|tid|qid)\b/i);
     if (named) return named[1].toUpperCase();
     const interval = value.match(/\bq\s*(6|8|12|24)\s*h\b/i);
@@ -374,6 +375,7 @@
     let s = (name || '').trim();
     const notes = [];
     const frequency = frequencyFrom(s);
+    s = s.replace(/\b(?:s\.?i\.?d|b\.?i\.?d|t\.?i\.?d|q\.?i\.?d)\b\.?|\bq\s*(?:6|8|12|24)\s*h\b|(?:하루|1일)\s*[1-4]\s*회/ig, ' ').replace(/\(\s*\)/g, ' ');
     s = s.replace(/^(sam|famo)(?=\d)/i, '$1 ');
     s = s.replace(/\bprn\b/ig, ' ');
     // 희석 지시는 약물명 일부가 아니므로 약물 검색 전에 분리한다.
@@ -442,8 +444,8 @@
     return value;
   };
   const mergeDirective = (value) => String(value || '').toLowerCase()
-    .replace(/\b(?:sid|bid|tid|qid)\b|\bq\s*(?:6|8|12|24)\s*h\b|(?:하루|1일)\s*[1-4]\s*회/ig, '')
-    .replace(/[\s,]+/g, '');
+    .replace(/\b(?:s\.?i\.?d|b\.?i\.?d|t\.?i\.?d|q\.?i\.?d)\b\.?|\bq\s*(?:6|8|12|24)\s*h\b|(?:하루|1일)\s*[1-4]\s*회/ig, '')
+    .replace(/[\s,()[\]]+/g, '');
 
   const splitDrugs = (name) => {
     if (!name.includes(',') && !/\s+\/\s+/.test(name)) return [name];
@@ -814,6 +816,11 @@
 
   const baselineKey = (date) => INJ_BASELINE + currentHospitalId() + ':' + date;
   const readyKey = (date) => 'vetsync-prepared-v1:' + currentHospitalId() + ':' + date;
+  const preparationArchiveKey = (date) => 'vetsync-preparation-archive-v1:' + currentHospitalId() + ':' + date;
+  const loadPreparationArchive = (date) => {
+    try { return JSON.parse(localStorage.getItem(preparationArchiveKey(date)) || localStorage.getItem(readyKey(date)) || '{}'); }
+    catch (_) { return {}; }
+  };
   const loadReady = (date) => {
     try {
       const records = JSON.parse(localStorage.getItem(readyKey(date))) || {};
@@ -1348,6 +1355,10 @@
     { id: 'blood', label: '채혈', run: bloodwork },
     { id: 'inj', label: '주사', run: injections },
     { id: 'flk', label: 'FLK', run: flkPatients },
+    { id: 'calc', label: '계산기', run: async (date) => {
+      try { return await flkPatients(date); }
+      catch (_) { const patients = []; patients.unavailable = true; return patients; }
+    } },
   ];
 
   function open() {
@@ -1362,7 +1373,7 @@
       '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
       '<span class="vsp-brand">VETSYNC</span>' +
       '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-      '<span class="vsp-header-spacer"></span><span class="vsp-version">2.5.1</span>' +
+      '<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.0</span>' +
       '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
       '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
       '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1380,6 +1391,9 @@
       #vsp .vsp-version{font-size:11px;color:#c7d5d1;font-variant-numeric:tabular-nums}
       #vsp .vsp-header-action{min-height:42px;padding:7px 12px!important;border-radius:6px!important;background:rgba(255,255,255,.1)!important;color:#f5f8f6!important;cursor:pointer}
       #vsp button,#vsp input,#vsp select{font:inherit}
+      #vsp #vsp-calc-patient,#vsp #vsp-calc-weight,#vsp #vsp-history-date{border:1px solid #b8c9c1;border-radius:6px;background:#fff;color:#172522;min-height:36px;padding:5px 8px}
+      #vsp #vsp-calc-open{display:inline-block;padding:8px 14px;border-radius:6px;background:#173b36;color:#fff;text-decoration:none;font-weight:600}
+      #vsp #vsp-history,#vsp #vsp-history-back{padding:6px 10px;border:1px solid #b8c9c1;border-radius:6px;background:#fff;color:#173b36}
       #vsp button{transition:background-color .14s ease,border-color .14s ease,color .14s ease}
       #vsp button:focus-visible,#vsp input:focus-visible,#vsp select:focus-visible{outline:3px solid #55aa98!important;outline-offset:2px}
       #vsp .vsp-body{width:min(100%,960px);margin:0 auto;padding:0 18px 28px!important;color:#172522}
@@ -1727,6 +1741,42 @@
         button.onclick = () => { flkEntries.splice(Number(button.dataset.flkRemove), 1); saveFlkState(); paintFlk(patients); };
       });
     };
+    const paintCalculator = (patients) => {
+      const body = box.querySelector('#vsp-body');
+      body.innerHTML = '<section style="max-width:540px;padding:16px 0"><h3>약물 계산기</h3>' +
+        '<label>입원환자 <select id="vsp-calc-patient" style="width:100%;font:inherit;padding:8px"><option value="">수동 입력</option>' +
+        patients.map((p, i) => '<option value="' + i + '">' + esc(p.name + ' · #' + p.code + ' · ' + (p.weight || '체중 없음')) + '</option>').join('') + '</select></label>' +
+        '<p><label>체중 <input id="vsp-calc-weight" type="number" min="0" step="any" inputmode="decimal" style="width:90px;font:inherit;text-align:center"> kg</label></p>' +
+        '<a id="vsp-calc-open" target="_blank" rel="noopener noreferrer">vet_calculator 열기 ↗</a>' +
+        '<p style="font-size:13px;color:#64748b">' + (patients.unavailable ? '환자 목록을 불러오지 못했습니다. 체중을 수동으로 입력해 주세요. ' : '') + '선택한 체중을 계산기에 전달합니다. 계산기에서도 체중을 수정할 수 있습니다.</p></section>';
+      const weight = body.querySelector('#vsp-calc-weight');
+      const update = () => {
+        const value = Number(weight.value);
+        const link = body.querySelector('#vsp-calc-open');
+        link.href = 'https://chansvet.github.io/vet_calculator/' + (Number.isFinite(value) && value > 0 ? '#weight=' + encodeURIComponent(value) : '');
+      };
+      body.querySelector('#vsp-calc-patient').onchange = (event) => {
+        const p = patients[event.target.value];
+        weight.value = p ? (readPatientWeight(p.pid) || parseFloat(p.weight) || '') : '';
+        update();
+      };
+      weight.oninput = update;
+      update();
+      text = '';
+    };
+    const paintPreparationHistory = (date) => {
+      const body = box.querySelector('#vsp-body');
+      const records = loadPreparationArchive(date);
+      const rows = Object.values(records).filter((r) => r && r.item && r.time && !r.inactive && !r.time.cancelled);
+      rows.sort((a, b) => compareText(a.patient.name, b.patient.name) || a.time.order - b.time.order);
+      text = date + ' 준비 기록\n' + rows.map((r) => r.patient.name + ' · ' + r.item.drug + ' · ' + plainTimeLabel(r.time) + ' · ' + readyAmount(r.item)).join('\n');
+      body.innerHTML = '<p><button id="vsp-history-back">오늘 목록</button> <label>준비일 <input id="vsp-history-date" type="date" value="' + esc(date) + '" max="' + ymd(new Date()) + '"></label></p>' +
+        '<p style="font-size:13px;color:#64748b">이 브라우저에 저장된 마지막 준비·확인 기록입니다. 실제 투여 기록과는 다릅니다. 시간은 선택한 준비일 기준입니다.</p>' +
+        (rows.length ? rows.map((r) => '<div style="padding:10px 0;border-bottom:1px solid #d6dfdb"><strong>' + esc(r.patient.name + ' · #' + r.patient.code) + '</strong><br>' +
+          esc(r.item.drug + ' · ' + plainTimeLabel(r.time) + ' · ' + readyAmount(r.item)) + '</div>').join('') : '<p>이 날짜에 저장된 준비 기록이 없습니다.</p>');
+      body.querySelector('#vsp-history-back').onclick = () => show('inj');
+      body.querySelector('#vsp-history-date').onchange = (event) => { if (event.target.value) paintPreparationHistory(event.target.value); };
+    };
     const paint = (id, sections) => {
       const body = box.querySelector('#vsp-body');
       if (!body) return;
@@ -1757,6 +1807,7 @@
       const refresh = id === 'inj' ?
         '<div class="vsp-refresh-row" style="margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
         '<button id="vsp-refresh" style="font:inherit;padding:6px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff">새로 확인</button>' +
+        '<button id="vsp-history">이전 준비 기록</button>' +
         '<button id="vsp-undo-review" aria-label="변경 확인 되돌리기" title="변경 확인 되돌리기"' + (loadReviewHistory(date).length ? '' : ' disabled') + '>&#8630;</button>' +
         '<button id="vsp-redo-review" aria-label="변경 확인 다시 실행" title="변경 확인 다시 실행"' + (loadReviewState(date).redo.length ? '' : ' disabled') + '>&#8631;</button>' +
         '<button id="vsp-concentration-toggle" aria-expanded="' + concentrationOpen + '">역가 설정</button>' +
@@ -1822,9 +1873,13 @@
       }
       const timeSelect = body.querySelector('#vsp-time');
       if (timeSelect) timeSelect.onchange = () => { selectedInjectionTime = timeSelect.value; paint(id, sections); };
-      const persistReady = (records, changes) => {
-        const saved = changes ? writeReviewStorage([[readyKey(date), JSON.stringify(records)],
-          [changeReadyKey(), JSON.stringify({ date, checks: changes })]]) : saveReady(date, records);
+      const persistReady = (records, changes, pid) => {
+        const archive = loadPreparationArchive(date);
+        Object.keys(archive).filter((key) => archive[key].pid === pid).forEach((key) => delete archive[key]);
+        Object.entries(records).filter(([, record]) => record.pid === pid).forEach(([key, record]) => { archive[key] = record; });
+        const saved = writeReviewStorage([[readyKey(date), JSON.stringify(records)],
+          [changeReadyKey(), JSON.stringify({ date, checks: changes })],
+          [preparationArchiveKey(date), JSON.stringify(archive)]]);
         if (!saved) alert('준비 기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.');
         paint(id, sections);
       };
@@ -1846,7 +1901,7 @@
             });
           }
           const changes = Object.fromEntries(Object.entries(loadChangeReady(date)).filter(([, record]) => record.pid !== pid));
-          persistReady(records, changes);
+          persistReady(records, changes, pid);
         };
       });
       body.querySelectorAll('[data-change-prepared]').forEach((checkbox) => {
@@ -1856,7 +1911,20 @@
           const checks = loadChangeReady(date);
           const fresh = injectionDisplay(sections, '', records, checks);
           const next = setChangeReady(fresh, checks, ids, checkbox.checked);
-          if (!writeReviewStorage([[changeReadyKey(), JSON.stringify({ date, checks: next })]])) {
+          const archive = loadPreparationArchive(date);
+          fresh.observations.forEach((observation, key) => {
+            if (JSON.stringify(checks[key]) === JSON.stringify(next[key])) return;
+            if (!checkbox.checked) {
+              if (records[key]) archive[key] = records[key];
+              else delete archive[key];
+            } else {
+              archive[key] = { pid: observation.pid, patient: sections.snapshot.patients[observation.pid] || records[key]?.patient,
+                item: observation.item, time: observation.time, inactive: observation.inactive,
+                signature: observation.signature, preparedAt: new Date().toISOString() };
+            }
+          });
+          if (!writeReviewStorage([[changeReadyKey(), JSON.stringify({ date, checks: next })],
+            [preparationArchiveKey(date), JSON.stringify(archive)]])) {
             alert('변경분 준비 기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인해주세요.');
           }
           paint(id, sections);
@@ -1970,7 +2038,8 @@
       try {
         const sections = await TABS.find((t) => t.id === id).run(ymd(new Date()), force);
         if (currentRequest !== requestId || !box.isConnected) return;
-        if (id === 'flk') paintFlk(sections);
+        if (id === 'calc') paintCalculator(sections);
+        else if (id === 'flk') paintFlk(sections);
         else paint(id, sections);
       } catch (e) {
         if (currentRequest !== requestId || !box.isConnected) return;
@@ -1980,6 +2049,9 @@
     };
 
     box.querySelector('#vsp-x').onclick = () => { requestId += 1; box.remove(); };
+    box.addEventListener('click', (event) => {
+      if (event.target.id === 'vsp-history') paintPreparationHistory(shift(ymd(new Date()), -1));
+    });
     box.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => show(b.dataset.tab, b.dataset.tab === 'inj')));
     box.querySelector('#vsp-copy').onclick = async (e) => {
       try { await navigator.clipboard.writeText(text); e.target.textContent = '복사됨'; }

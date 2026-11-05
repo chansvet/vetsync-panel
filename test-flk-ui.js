@@ -22,12 +22,13 @@ source = source.replace("{ id: 'inj', label: '주사', run: injections }", `{
   }
 }`);
 source = source.replace("    show('blood');", "    show('inj');");
+source = source.replace('return await flkPatients(date);', "return [{pid:'demo',name:'계산 예시',code:'DEMO',weight:'5.2 kg'}];");
 source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")) + 'open();})();';
 
 (async () => {
   const server = http.createServer((req, res) => {
     res.setHeader('Content-Type', req.url === '/panel.js' ? 'text/javascript' : 'text/html');
-    res.end(req.url === '/panel.js' ? source : '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="/panel.js" defer></script><body></body>');
+    res.end(req.url === '/calculator' ? fs.readFileSync('../vet_calculator/index.html', 'utf8') : req.url === '/panel.js' ? source : '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="/panel.js" defer></script><body></body>');
   });
   let browser;
   try {
@@ -64,6 +65,10 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     assert.equal(await page.locator('[data-change-prepared]').isChecked(), false);
     await page.locator('#vsp-time').selectOption('오늘|17');
     await page.locator('[data-change-prepared]').check();
+    const preparedArchive = await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((key) => key.startsWith('vetsync-preparation-archive-v1:'))));
+    const archivedItems = Object.values(JSON.parse(preparedArchive)).filter((record) => record.item);
+    assert.equal(archivedItems.length, 2);
+    assert.ok(archivedItems.every((record) => record.item.calculation.text === '0.73 mL'));
     assert.ok(await page.getByRole('checkbox', {name:'테스트 환자 주사 준비 완료'}).isChecked());
     await page.locator('#vsp-time').selectOption('내일|9');
     assert.ok(await page.locator('[data-change-prepared]').isChecked());
@@ -79,6 +84,7 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.locator('#vsp-stock-value').fill('150');
     await page.getByRole('button', {name:'저장',exact:true}).click();
     await page.locator('[data-ready-confirm]').click();
+    assert.equal(await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((key) => key.startsWith('vetsync-preparation-archive-v1:')))), preparedArchive);
     assert.equal(await page.locator('[data-ready-confirm]').count(), 0);
     await page.locator('#vsp-undo-review').click();
     assert.equal(await page.locator('[data-ready-confirm]').count(), 1);
@@ -261,6 +267,31 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.screenshot({path:'/tmp/vetsync-flk-2.4.5-desktop.png',fullPage:true});
     await page.locator('.vsp-flk-result').nth(2).screenshot({path:'/tmp/vetsync-flk-2.4.5-winter.png'});
     await page.locator('.vsp-flk-result').nth(5).screenshot({path:'/tmp/vetsync-fk-2.5.0-cat.png'});
+    await page.getByRole('button', {name:'계산기',exact:true}).click();
+    await page.locator('#vsp-calc-patient').selectOption('0');
+    assert.equal(await page.locator('#vsp-calc-weight').inputValue(), '5.2');
+    assert.match(await page.locator('#vsp-calc-open').getAttribute('href'), /#weight=5.2$/);
+    await page.locator('#vsp-calc-weight').fill('7.3');
+    assert.match(await page.locator('#vsp-calc-open').getAttribute('href'), /#weight=7.3$/);
+    for (const width of [320,390,1024]) {
+      await page.setViewportSize({width,height:844});
+      assert.ok(await page.locator('#vsp').evaluate((el) => el.scrollWidth <= el.clientWidth), 'Calculator panel fits ' + width);
+    }
+    await page.setViewportSize({width:390,height:844});
+    await page.screenshot({path:'/tmp/vetsync-calculator-2.6.0.png',fullPage:true});
+    await page.getByRole('button', {name:'주사',exact:true}).click();
+    await page.locator('#vsp-history').click();
+    assert.match(await page.locator('#vsp-body').innerText(), /저장된 준비 기록이 없습니다/);
+    const today = await page.evaluate(() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); });
+    await page.locator('#vsp-history-date').fill(today);
+    await page.locator('#vsp-history-date').dispatchEvent('change');
+    assert.match(await page.locator('#vsp-body').innerText(), /SAM/);
+    assert.equal(await page.locator('[data-patient-ready]').count(), 0);
+    await page.screenshot({path:'/tmp/vetsync-history-2.6.0.png',fullPage:true});
+    await page.goto('http://127.0.0.1:' + server.address().port + '/calculator#weight=5.2');
+    assert.equal(await page.locator('#weightInput').inputValue(), '5.2');
+    await page.locator('#weightInput').fill('6');
+    assert.equal(await page.locator('#weightInput').inputValue(), '6');
     assert.deepEqual(errors, []);
     console.log('FLK controls, per-patient persistence, stored strengths and mobile layout passed');
   } finally {

@@ -264,6 +264,16 @@ const frequencyShift = snapshot(
   { ...row('vitamin K', '2mpk', 9), tag: '내일', order: 109, frequency: 'SID', note: 'SID', instruction: 'SID' },
 );
 assert.equal(frequencyShift.patients.test.items.length, 1);
+for (const name of ['nebul', 'nebul IV', 'nebulization SAM', '네뷸라이저 IV']) assert.equal(ctx.api.isInjection(name), false);
+const frequencyVariants = ['SAM 22 IV (SID)', 'SAM 22 IV B.I.D.', 'SAM 22 IV q 12 h', 'SAM 22 IV 하루 2회'];
+for (const name of frequencyVariants) assert.equal(ctx.api.parseDrug(name).drug, 'SAM');
+const parsedFrequencyShift = snapshot(...frequencyVariants.map((name, index) => ({
+  ...row('SAM', '22', index ? 9 : 21), ...ctx.api.parseDrug(name),
+  tag: index ? '내일' : '오늘', order: index ? 109 : 21,
+  instruction: index ? '(B.I.D.)' : '(SID)',
+})));
+assert.equal(parsedFrequencyShift.patients.test.items.length, 1);
+assert.equal(parsedFrequencyShift.patients.test.items[0].times.length, 2);
 assert.equal(frequencyShift.patients.test.items[0].dose, '2mpk');
 assert.deepEqual(JSON.parse(JSON.stringify(frequencyShift.patients.test.items[0].times.map((time) => time.frequency))), ['BID', 'SID']);
 assert.equal(engine.calculate('Unknown', '2mpk', '5 kg', '', { concentration: 10, concentrationUnit: 'mg' }).text, '1.00 mL');
