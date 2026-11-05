@@ -5,6 +5,8 @@ const engine = require('./dose-engine')(require('./drug-defaults.json'));
 assert.equal(engine.find('vit. K').name, engine.find('vitamin K').name);
 assert.equal(engine.find('maro').name, 'Maropitant');
 assert.equal(engine.find('marbo').name, 'Marbofloxacin');
+assert.equal(engine.find('메토클로프라마이드').conc, 5);
+assert.equal(engine.calculate('meto', '0.5mpk', '5 kg').text, '0.50 mL');
 assert.equal(engine.calculate('SAM', '', '5 kg').text, '0.73 mL');
 assert.equal(engine.calculate('SAM', '30mpk', '5 kg').text, '1.00 mL');
 assert.equal(engine.calculate('SAM', '150mg', '5 kg').text, '1.00 mL');
@@ -31,6 +33,8 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
   'globalThis.api = {makeSnapshot,compareSnapshot,render,weightValue,latestWeight,parseDrug,doseFromInstruction,dilutionFrom,isInjection,pickInj,isLabAtDraw,noteOf,labNameOf,flkValues,calculateFlk,ampuleNeeds};})();';
 const ctx = { doseEngine: engine };
 vm.runInNewContext(source, ctx);
+assert.equal(ctx.api.isLabAtDraw({displayName:'바로박 체크 PCV',cells:[{hourSlot:9,status:'PLANNED'}]}), false);
+assert.equal(ctx.api.isLabAtDraw({displayName:'PCV',cells:[{hourSlot:9,status:'PLANNED'}]}), true);
 assert.equal(ctx.api.weightValue('오후 9시 퇴원'), '');
 assert.equal(ctx.api.weightValue('9/15 퇴원예정'), '');
 assert.equal(ctx.api.weightValue('.9'), '0.9 kg');

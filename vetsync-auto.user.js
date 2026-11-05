@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.6.1
+// @version      2.6.2
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -30,7 +30,7 @@
     const aliases = [
     ['SAM', '유니설암', '설밤'], ['Famotidine', 'famo', '파모', '모틴'],
     ['Maropitant', 'maro', 'cerenia', '세레니아'], ['Enrofloxacin', 'enro', '바이트릴'],
-    ['Vitamin K', 'vit k', '비타민k'], ['Metoclopramide', 'meto'],
+    ['Vitamin K', 'vit k', '비타민k'], ['Metoclopramide', 'meto', '메토클로프라미드', '메토클로프라마이드', '메토'],
     ['Cefazolin', 'cefa'], ['Ondansetron', 'ondan', '온단세트론'],
     ['Omeprazole', '오메프라졸'], ['Carprofen'],
     ['Marbofloxacin', 'marbo', '마보', 'marbocyl'], ['Tramadol', 'tra', '트라마돌'],
@@ -431,6 +431,7 @@
     const treatRows = (d) => (d.sections || []).filter((s) => s.section === 'TREATMENT').flatMap((s) => s.rows || []);
     const isLabAtDraw = (row) => {
     const name = (row.displayName || '').trim();
+    if (/바로\s*박\s*체크|바로박|barovac|hemovac/i.test(name)) return false;
     return LAB.test(name) && !NOT_LAB.test(name) &&
     (row.cells || []).some((cell) => cell.hourSlot === DRAW_HOUR && ACTIVE.includes(cell.status));
     };
@@ -611,7 +612,7 @@
     if (/\bnebul(?:izer|ization)?\b|네뷸|네불/i.test(n)) return false;
     if (FLUID_ORDER.test(n)) return false;
     if (SKIP.test(n) || PROC.test(n) || CRI.test(n) || EYE.test(n) || NOTINJ.test(n) || ORAL.test(n)) return false;
-    return ROUTE.test(n) || KNOWN.test(n) || HYDROXOCOBALAMIN.test(n) || LEVETIRACETAM.test(n) || /vitamin\s*k|\bamikacin\b|아미카신|세포탁심/i.test(n);
+    return ROUTE.test(n) || KNOWN.test(n) || HYDROXOCOBALAMIN.test(n) || LEVETIRACETAM.test(n) || /vitamin\s*k|\bamikacin\b|아미카신|세포탁심|메토클로프라미드|메토클로프라마이드|메토/i.test(n);
     };
     const frequencyFrom = (text) => {
     const value = String(text || '').replace(/\b([sbtq])\.i\.d\.?/ig, '$1id');
@@ -1587,7 +1588,7 @@
     '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="vsp-brand">VETSYNC</span>' +
     '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.1</span>' +
+    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.2</span>' +
     '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
     '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -1963,13 +1964,38 @@
     '<label>입원환자 <select id="vsp-calc-patient" style="width:100%;font:inherit;padding:8px"><option value="">수동 입력</option>' +
     patients.map((p, i) => '<option value="' + i + '">' + esc(p.name + ' · #' + p.code + ' · ' + (p.weight || '체중 없음')) + '</option>').join('') + '</select></label>' +
     '<p><label>체중 <input id="vsp-calc-weight" type="number" min="0" step="any" inputmode="decimal" style="width:90px;font:inherit;text-align:center"> kg</label></p>' +
-    '<a id="vsp-calc-open" target="_blank" rel="noopener noreferrer">vet_calculator 열기 ↗</a>' +
-    '<p style="font-size:13px;color:#64748b">' + (patients.unavailable ? '환자 목록을 불러오지 못했습니다. 체중을 수동으로 입력해 주세요. ' : '') + '선택한 체중을 계산기에 전달합니다. 계산기에서도 체중을 수정할 수 있습니다.</p></section>';
+    (patients.unavailable ? '<p>환자 목록을 불러오지 못했습니다. 체중을 직접 입력해주세요.</p>' : '') +
+    '<input id="vsp-calc-search" type="search" aria-label="약물 검색" placeholder="약물 검색" style="width:100%;font:inherit;padding:8px;margin-bottom:10px">' +
+    '<div id="vsp-calc-results"></div></section>';
     const weight = body.querySelector('#vsp-calc-weight');
+    const drugs = doseEngine.list().filter((drug) => drug.unit !== 'IU');
+    const edits = new Map();
+    const calculateRow = (drug, index) => {
+    const input = body.querySelector('[data-calc-dose="' + index + '"]');
+    const value = input.value;
+    const written = value ? value + (drug.unit === 'ug' ? 'ug/kg' : 'mpk') : '';
+    const result = value ? doseEngine.calculate(drug.name, written, Number(weight.value) > 0 ? Number(weight.value) + ' kg' : '- kg') : {text:'용량 확인 필요'};
+    body.querySelector('[data-calc-result="' + index + '"]').textContent = result.text;
+    text = '약물 계산 · ' + (weight.value || '-') + ' kg\n' + body.querySelector('#vsp-calc-results').innerText;
+    };
     const update = () => {
-    const value = Number(weight.value);
-    const link = body.querySelector('#vsp-calc-open');
-    link.href = 'https://chansvet.github.io/vet_calculator/' + (Number.isFinite(value) && value > 0 ? '#weight=' + encodeURIComponent(value) : '');
+    const query = body.querySelector('#vsp-calc-search').value.toLowerCase().trim();
+    const alias = doseEngine.find(query);
+    const shown = drugs.map((drug, index) => ({drug,index})).filter(({drug}) => !query || drug.name.toLowerCase().includes(query) || alias?.name === drug.name);
+    body.querySelector('#vsp-calc-results').innerHTML = shown.map(({drug,index}) => {
+    const stock = doseEngine.getConcentration(drug.name);
+    return '<div style="padding:10px 0;border-bottom:1px solid #d6dfdb"><strong>' + esc(drug.name) + '</strong>' +
+    '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-top:4px"><label><input data-calc-dose="' + index + '" aria-label="' + esc(drug.name) + ' 용량" type="number" min="0" step="any" inputmode="decimal" value="' + esc(edits.has(index) ? edits.get(index) : drug.dose ?? '') + '" style="width:65px;padding:4px;text-align:center;font:inherit"> ' + (drug.unit === 'ug' ? 'µg/kg' : 'mg/kg') + '</label>' +
+    '<span style="font-size:12px;color:#63756c">' + esc(stock.value + ' ' + stock.unit + '/mL') + '</span>' +
+    '<strong data-calc-result="' + index + '" style="margin-left:auto;color:#315f51"></strong></div></div>';
+    }).join('') || '<p>일치하는 약물이 없습니다.</p>';
+    shown.forEach(({drug,index}) => {
+    calculateRow(drug, index);
+    body.querySelector('[data-calc-dose="' + index + '"]').oninput = (event) => {
+    edits.set(index, event.target.value); calculateRow(drug, index);
+    };
+    });
+    text = '약물 계산 · ' + (weight.value || '-') + ' kg\n' + body.querySelector('#vsp-calc-results').innerText;
     };
     body.querySelector('#vsp-calc-patient').onchange = (event) => {
     const p = patients[event.target.value];
@@ -1977,8 +2003,8 @@
     update();
     };
     weight.oninput = update;
+    body.querySelector('#vsp-calc-search').oninput = update;
     update();
-    text = '';
     };
     const paintPreparationHistory = (date) => {
     const body = box.querySelector('#vsp-body');

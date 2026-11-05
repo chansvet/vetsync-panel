@@ -4,7 +4,7 @@ const createDoseEngine = (drugs) => {
   const aliases = [
     ['SAM', '유니설암', '설밤'], ['Famotidine', 'famo', '파모', '모틴'],
     ['Maropitant', 'maro', 'cerenia', '세레니아'], ['Enrofloxacin', 'enro', '바이트릴'],
-    ['Vitamin K', 'vit k', '비타민k'], ['Metoclopramide', 'meto'],
+    ['Vitamin K', 'vit k', '비타민k'], ['Metoclopramide', 'meto', '메토클로프라미드', '메토클로프라마이드', '메토'],
     ['Cefazolin', 'cefa'], ['Ondansetron', 'ondan', '온단세트론'],
     ['Omeprazole', '오메프라졸'], ['Carprofen'],
     ['Marbofloxacin', 'marbo', '마보', 'marbocyl'], ['Tramadol', 'tra', '트라마돌'],

@@ -277,9 +277,17 @@ source = source.slice(0, source.lastIndexOf("  if (!location.hostname.endsWith")
     await page.getByRole('button', {name:'계산기',exact:true}).click();
     await page.locator('#vsp-calc-patient').selectOption('0');
     assert.equal(await page.locator('#vsp-calc-weight').inputValue(), '5.2');
-    assert.match(await page.locator('#vsp-calc-open').getAttribute('href'), /#weight=5.2$/);
+    assert.equal(await page.locator('#vsp-calc-open').count(), 0);
+    await page.locator('#vsp-calc-search').fill('meto');
+    assert.match(await page.locator('#vsp-calc-results').innerText(), /5 mg\/mL/);
+    assert.match(await page.locator('#vsp-calc-results').innerText(), /0.52 mL/);
     await page.locator('#vsp-calc-weight').fill('7.3');
-    assert.match(await page.locator('#vsp-calc-open').getAttribute('href'), /#weight=7.3$/);
+    assert.match(await page.locator('#vsp-calc-results').innerText(), /0.73 mL/);
+    await page.locator('[data-calc-dose]').fill('1');
+    assert.match(await page.locator('#vsp-calc-results').innerText(), /1.46 mL/);
+    await page.locator('[data-calc-dose]').fill('');
+    assert.match(await page.locator('#vsp-calc-results').innerText(), /용량 확인 필요/);
+    await page.locator('[data-calc-dose]').fill('0.5');
     for (const width of [320,390,1024]) {
       await page.setViewportSize({width,height:844});
       assert.ok(await page.locator('#vsp').evaluate((el) => el.scrollWidth <= el.clientWidth), 'Calculator panel fits ' + width);
