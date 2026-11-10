@@ -1,7 +1,7 @@
 # VetSync 인턴 패널
 
 이 저장소는 GitHub `chansvet/vetsync-panel`과 연결되어 있고 GitHub Pages로 배포된다.
-ChatGPT와 Claude가 번갈아 수정한다. 작업 전에 항상 `git pull`로 최신 상태를 받는다.
+2026년 11월부터 Claude만 수정한다. 그래도 작업 전에 `git pull`로 최신 상태를 확인한다.
 
 ## 먼저 읽을 것
 
