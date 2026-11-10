@@ -15,18 +15,18 @@ const lab = (name) => isLabAtDraw({ displayName: name, cells: [{ hourSlot: 9, st
 
 // 주사로 잡아야 하는 것
 ['SAM 22', 'sam22', 'famo0.5', 'Meto', 'Leve 20', 'Cefotaxime 40', 'amikacin 10->15mpk',
-  'Calcium gluconate 10% 1mg/kg iv for 30min', 'tranexamic acid 10mpk 2min', 'Pheno 2mpk 천천히']
+  'Calcium gluconate 10% 1mg/kg iv for 30min', '브렌다 0.5ml iv', '브렌다 0.5ml', 'fuzapladib 0.4mpk iv', 'tranexamic acid 10mpk 2min', 'Pheno 2mpk 천천히']
   .forEach((n) => assert.ok(isInjection(n), '주사여야 함: ' + n));
 
 // 주사에서 빼야 하는 것
 ['mida 0.2mpk iv PRN', 'mida 1ml iv PRN', 'Midazolam 1mpk',
   '포도당 20% 1ml/kg iv', '20%포도당 5ml iv', '20% 포도당 1ml slow iv', '20%Dex 1ml slow iv',
   'tranexamic acid 10ml/h 3시간', 'Tranexamic acid 10mg/kg/kr for 3hours',
-  'Furosemide 1mg/kg/hr CRI', 'metro 15', 'R 인슐린 1U im', '캐닌슐린 15칸 SC', '항생제 PO', '심장약']
+  'Furosemide 1mg/kg/hr CRI', 'HSS 3ml/kg slow IV', 'HHS 7.5% 3ml/kg IV', 'NaHCO3 2cc/kg(주사용수 3배희석) for 1hr', 'NaHCO3 2cc/kg iv for 1hr', 'metro 15', 'R 인슐린 1U im', '캐닌슐린 15칸 SC', '항생제 PO', '심장약']
   .forEach((n) => assert.ok(!isInjection(n), '주사가 아님: ' + n));
 
 // 채혈
-['혈검 (CRP)', 'crp', '신4 가스 CRP', 'BUN CREA PHOS 가스', '채혈: cbc, crp, t.bil', '혈검 CBC CRP/지혈오래']
+['혈검 (CRP)', 'crp', '신4 가스 CRP', 'BUN CREA PHOS 가스', '채혈: cbc, crp, t.bil', '혈검 CBC CRP/지혈오래', '간이혈당', '케톤', '혈검(가스, 케톤)']
   .forEach((n) => assert.ok(lab(n), '채혈이어야 함: ' + n));
 ['바로박체크 (ml, 양상)', '흉부방사선']
   .forEach((n) => assert.ok(!lab(n), '채혈 목록이 아님: ' + n));

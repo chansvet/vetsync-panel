@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VetSync 처치표 자동 열기
 // @namespace    https://github.com/chansvet
-// @version      2.6.7
+// @version      2.6.8
 // @description  VetSync 화면에 채혈·주사 목록 버튼을 추가합니다. 조회만 하고 차트는 수정하지 않습니다.
 // @match        https://vetsync4.vetu1.com/*
 // @run-at       document-start
@@ -1093,21 +1093,21 @@
     const NEXT = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     const ACTIVE = ['PLANNED', 'COMPLETED', 'IN_PROGRESS'];
     const CANCELLED_CELL = ['SKIPPED', 'CANCELLED'];
-    const LAB = /혈검|혈액검사|도말|가스|전해질|신4|신장\s*4종|간4|간\s*4종|간이혈당|\bCBC\b|\bCRP\b|\bSAA\b|\bfSAA\b|\bSDMA\b|\bTnI\b|\bCPL\b|\bfPL\b|\bFPL\b|\bPCV\b|\bCK\b|\bChem\d*\b|\bgas\b|\blyte\b|\bTBIL\b|\bT\.?bil\b|\bBUN\b|\bCrea\b|\bALT\b|\bALP\b|\bALB\b|\bphos\b|\bTP\s*\/\s*A\w*\b|\bLactate\b/i;
+    const LAB = /혈검|혈액검사|도말|가스|전해질|케톤|\bketones?\b|\bBHB\b|신4|신장\s*4종|간4|간\s*4종|간이혈당|\bCBC\b|\bCRP\b|\bSAA\b|\bfSAA\b|\bSDMA\b|\bTnI\b|\bCPL\b|\bfPL\b|\bFPL\b|\bPCV\b|\bCK\b|\bChem\d*\b|\bgas\b|\blyte\b|\bTBIL\b|\bT\.?bil\b|\bBUN\b|\bCrea\b|\bALT\b|\bALP\b|\bALB\b|\bphos\b|\bTP\s*\/\s*A\w*\b|\bLactate\b/i;
     const NOT_LAB = /혈압|항혈전|고혈압|이뇨|수혈|요배양|요검사|뇨검사|요카|초음파|방사선|조직검사|항감테|내복|아이스팩|음수|배뇨|배변|CRI|스푼|산소|O2\s*supply/i;
     const ELECTROLYTE = /전해질|가스|\bgas\b|\blyte\b/i;
     const HANDLING = /팔|앞다리|뒷다리|후지|전지|경정맥|채혈|지혈|각각|나비침|희석|냉장/;
-    const KNOWN = /SAM\s*\d|\bSAM\b|설밤|\bfamo\w*|파모|\bmaro\w*|세레니아|cerenia|\bmero\w*|메로페넴|\bmarbo\w*|마보|\benro\w*|\bcefa\w*|\bcepha\w*|cefotaxime|convenia|\bdalte\w*|\bdatle\w*|tramadol|트라마돌|\btra\s*\d|vit\.?\s?k|비타민k|\bmelo\w*|dexa\w*|덱사|ondansetron|\bondan\w*|온단세트론|파노퀠|calcium\s*gluconate|칼슘글루코네이트|칼슘글루콘산|\bfuro\w*|퓨로세마이드|라식스|butor\w*|carprofen|tranexamic|\bTXA\b|amoxi\w*|clinda\w*|\bgent\w*|prednisolone|프레드|solu|atropine|glyco\w*|호의주|타우린|iron\s*dextran|hydroxocobalamin|cobalamin|G-?csf|\bDPO\b|romiplostim|로미플로스팀|프로롱갈|중탄산나트륨|esomeprazol\w*|eosmeprazol\w*|omeprazol\w*|오메프라졸|chlor\w*phenir\w*|클로르페니라민|\bleve\s*\d|levetiracetam|pheno\s*\d|phenobarbital|\bmeto\b/i;
+    const KNOWN = /SAM\s*\d|\bSAM\b|설밤|\bfamo\w*|파모|\bmaro\w*|세레니아|cerenia|\bmero\w*|메로페넴|\bmarbo\w*|마보|\benro\w*|\bcefa\w*|\bcepha\w*|cefotaxime|convenia|\bdalte\w*|\bdatle\w*|tramadol|트라마돌|\btra\s*\d|vit\.?\s?k|비타민k|\bmelo\w*|dexa\w*|덱사|ondansetron|\bondan\w*|온단세트론|파노퀠|브렌다|fuzapladib|calcium\s*gluconate|칼슘글루코네이트|칼슘글루콘산|\bfuro\w*|퓨로세마이드|라식스|butor\w*|carprofen|tranexamic|\bTXA\b|amoxi\w*|clinda\w*|\bgent\w*|prednisolone|프레드|solu|atropine|glyco\w*|호의주|타우린|iron\s*dextran|hydroxocobalamin|cobalamin|G-?csf|\bDPO\b|romiplostim|로미플로스팀|프로롱갈|중탄산나트륨|esomeprazol\w*|eosmeprazol\w*|omeprazol\w*|오메프라졸|chlor\w*phenir\w*|클로르페니라민|\bleve\s*\d|levetiracetam|pheno\s*\d|phenobarbital|\bmeto\b/i;
     const HYDROXOCOBALAMIN = /hydro(?:xo)?cobalamin|\bcobalamin\b|\bB12\b|비타민\s*B12/i;
     const LEVETIRACETAM = /\bleve(?:tiracetam)?\b/i;
     const ROUTE = /(?:^|[^a-z])(iv|sc|im)(?![a-z])/i;
-    const SKIP = /metro\s*\d|metronidazol\w*|\bmetro\b|메트로|후라시닐|인슐린|insulin|슐린|glargine|글라진|란투스|lantus|프로진크|\bPZI\b|vetsulin|humulin|휴물린|novolin|노보믹스|노보래피드|mannitol|만니톨|\bNAC\b|acetylcystein\w*|20\s*%\s*dex|20\s*%\s*포도당|포도당\s*20\s*%|피하수액|\bPPN\b|\bTPN\b/i;
+    const SKIP = /metro\s*\d|metronidazol\w*|\bmetro\b|메트로|후라시닐|인슐린|insulin|슐린|glargine|글라진|란투스|lantus|프로진크|\bPZI\b|vetsulin|humulin|휴물린|novolin|노보믹스|노보래피드|mannitol|만니톨|\bNAC\b|acetylcystein\w*|20\s*%\s*dex|\bH[HS]S\b|고장성|hypertonic|20\s*%\s*포도당|포도당\s*20\s*%|피하수액|\bPPN\b|\bTPN\b/i;
     const PROC = /medetomidine|dexmed|midazolam|\bmida\b|미다졸람|local\s*injection|펫소좀|propofol|alfaxa|ketamine|zoletil|xylazine|럼푼|마취|vincristine|vinblastine|doxorubicin|cyclophosphamide|carboplatin|cisplatin|lomustine|chlorambucil|cytarabine|asparaginase|mitoxantrone|toceranib|빈크리스틴|독소루비신|항암/i;
     const NONAME = /^(추가\s*)?(스테로이드약?|이뇨제|식욕촉진제|식촉제?|심장약|추가약|입원약\s*\d*|항혈전제|안정제|진정제|내복약|po제|간보호제|인흡착제|처방약|기타약|안약|영양제|항생제|진통제|소염제|항히스타민제|위장약|변비약|식후약|아침약|저녁약|\d+번약(\s*\+\s*\d+번약)*|퇴원약)(\s*PO)?$/i;
     const ORAL = /\bpo\b|po제|내복|경구|\d\s*[Tt]\b|\btab\b|캡슐|\bcap\b|시럽|스멕타|레나메진|인흡착제|간보호제|안정제|가바|갑상선약|알약|비오플|봉지|\d\s*알\b|\d\s*정\b|아조딜/i;
     const EYE = /양안|우안|좌안|점안|안약|리포직|포비돈|^V\d|^T\d|\bG\d\b/i;
     const NOTINJ = /드레싱|소독|사진|방사선|초음파|혈검|혈액검사|혈당|체중|체온|심박|호흡|혈압|구토|배변|배뇨|식이|산소|음수|물그릇|핫팩|자세|산책|라인|배액|세정|점이액|교체|측정|확인|보정|면회|목욕|미용|밴드|붕대|카테터|수혈|튜브|네뷸|가습|강급|급여|스푼|연고|스프레이|허니|술부|귀\s?세정|cryo|속도|변경|기입|흉방|요배양|검사|\bCRP\b/i;
-    const CRI = /\bcri\b|\/\s*(?:hr|h|kr)\b|시간당|\d+\s*시간|for\s*\d+\s*hours?\b/i;
+    const CRI = /\bcri\b|\/\s*(?:hr|h|kr)\b|시간당|\d+\s*시간|for\s*\d+\s*(?:hours?|hrs?|h)\b/i;
     const COND = /필요시|prn|경우\s*x|없을\s*경우|이면|이하시|이상시|시\s*연결|시\s*중단|보류/i;
     const FLUID_ORDER = /^\s*(?:H\s*\/\s*S|HS|FLK|(?:0\.\d+%?\s*)?N\s*\/\s*S|0\.45\s*NaCl)\b/i;
     const ROUTINE = [17, 21, 1, 9];
@@ -2373,7 +2373,7 @@
     '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
     '<span class="vsp-brand">VETSYNC</span>' +
     '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.7</span>' +
+    '<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.8</span>' +
     '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
     '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
     '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
