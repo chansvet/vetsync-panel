@@ -2349,7 +2349,7 @@ box.innerHTML =
 '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
 '<span class="vsp-brand">VETSYNC</span>' +
 '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-'<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.5</span>' +
+'<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.6</span>' +
 '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
 '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
@@ -2479,13 +2479,30 @@ panelStyle.textContent = `
 #vsp #vsp-stock-value{width:90px;text-align:center}
 #vsp .vsp-stock-state{font-size:12px;color:#63756c}
 #vsp #vsp-stock-error{width:100%;color:#9b3d32;font-size:13px}
+/* 정돈: 이름이 가장 크고, 체중·번호·품종은 한 단계 작게 같은 크기로 맞춘다 */
+#vsp .vsp-patient-title{display:flex;align-items:center;flex-wrap:wrap;gap:2px 6px;font-size:16px!important;letter-spacing:-.01em}
+#vsp .vsp-injection-patient .vsp-patient-title{font-size:16px!important}
+#vsp .vsp-patient-title > span:not(.vsp-cage):not(.vsp-status):not(.vsp-updated-tag){font-size:13px!important;font-weight:500!important;color:#64746c!important;letter-spacing:0}
+#vsp .vsp-patient-title > span:not(.vsp-cage):not(.vsp-status):not(.vsp-updated-tag) span{font-size:inherit!important}
+#vsp .vsp-patient-title > span:not(.vsp-cage):not(.vsp-status):not(.vsp-updated-tag) span[style*="font-weight:800"]{font-weight:700!important;color:#172522!important}
+#vsp .vsp-patient-title > span:not(.vsp-cage):not(.vsp-status):not(.vsp-updated-tag) span[style*="#b45309"]{color:#b45309!important}
+#vsp .vsp-cage{font-size:13px!important;color:#64746c!important}
+#vsp .vsp-status,#vsp .vsp-updated-tag{line-height:18px!important;padding:0 6px!important;vertical-align:0!important;font-size:11.5px!important;font-weight:700!important}
+#vsp .vsp-patient-ready-control{width:24px;height:32px;margin:0 2px 0 -2px}
+#vsp .vsp-injection-patient .vsp-treatment{font-size:14.5px!important;letter-spacing:-.005em}
+#vsp .vsp-section-heading{font-size:13px!important;letter-spacing:.01em}
+/* 정돈: 목록 위 버튼들의 높이와 글자 크기를 하나로 맞춘다 */
+#vsp #vsp-refresh,#vsp #vsp-history,#vsp #vsp-history-back,#vsp #vsp-concentration-toggle,#vsp #vsp-accept{height:38px;min-height:38px!important;padding:0 12px!important;font-size:14px!important;font-weight:600;line-height:1;display:inline-flex;align-items:center;border:1px solid #bdcbc4!important;border-radius:6px!important;background:#fff!important;color:#315f51!important;vertical-align:middle}
+#vsp #vsp-undo-review,#vsp #vsp-redo-review{width:38px;height:38px;font-size:20px;border-radius:6px;vertical-align:middle}
+#vsp [data-sort]{min-height:32px;font-size:14px!important}
+#vsp .vsp-time-filter select{min-height:38px}
 @media(max-width:520px){
 #vsp .vsp-header{gap:5px;padding-left:10px!important;padding-right:10px!important}
 #vsp .vsp-brand{display:none}
 #vsp .vsp-tabs{gap:1px}
 #vsp [data-tab]{padding:7px 11px!important}
 #vsp .vsp-header-action{padding:6px 9px!important}
-#vsp .vsp-version{font-size:10px}
+#vsp .vsp-version{display:none}
 #vsp .vsp-body{padding-left:10px!important;padding-right:10px!important}
 #vsp .vsp-list-controls{gap:8px 14px}
 #vsp .vsp-time-filter select{max-width:144px;padding-right:20px;min-height:36px;font-size:14px}
