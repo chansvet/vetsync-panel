@@ -20,7 +20,7 @@
 1. `git pull`
 2. `vetsync-panel.src.js` 수정
 3. `node build-bookmarklet.js`
-4. 테스트: `node test-vetsync-panel.js`, `node test-dose.js`, `node test-flk-ui.js`, `node test-vetsync-auto.js`
+4. 테스트: `node test-vetsync-panel.js`, `node test-dose.js`, `node test-flk-ui.js`, `node test-vetsync-auto.js`, `node test-recognition.js`
 5. 유저스크립트 자동 업데이트를 위해 `@version`을 올린다 (build-bookmarklet.js 안)
 6. 커밋 후 `git push`. Pages 반영까지 1~2분 걸린다.
 
