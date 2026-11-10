@@ -1077,13 +1077,13 @@ const KNOWN = /SAM\s*\d|\bSAM\b|설밤|\bfamo\w*|파모|\bmaro\w*|세레니아|c
 const HYDROXOCOBALAMIN = /hydro(?:xo)?cobalamin|\bcobalamin\b|\bB12\b|비타민\s*B12/i;
 const LEVETIRACETAM = /\bleve(?:tiracetam)?\b/i;
 const ROUTE = /(?:^|[^a-z])(iv|sc|im)(?![a-z])/i;
-const SKIP = /metro\s*\d|metronidazol\w*|\bmetro\b|메트로|후라시닐|인슐린|insulin|슐린|glargine|글라진|란투스|lantus|프로진크|\bPZI\b|vetsulin|humulin|휴물린|novolin|노보믹스|노보래피드|mannitol|만니톨|\bNAC\b|acetylcystein\w*|20%\s*dex|피하수액|\bPPN\b|\bTPN\b/i;
-const PROC = /medetomidine|dexmed|midazolam|미다졸람|local\s*injection|펫소좀|propofol|alfaxa|ketamine|zoletil|xylazine|럼푼|마취|vincristine|vinblastine|doxorubicin|cyclophosphamide|carboplatin|cisplatin|lomustine|chlorambucil|cytarabine|asparaginase|mitoxantrone|toceranib|빈크리스틴|독소루비신|항암/i;
+const SKIP = /metro\s*\d|metronidazol\w*|\bmetro\b|메트로|후라시닐|인슐린|insulin|슐린|glargine|글라진|란투스|lantus|프로진크|\bPZI\b|vetsulin|humulin|휴물린|novolin|노보믹스|노보래피드|mannitol|만니톨|\bNAC\b|acetylcystein\w*|20\s*%\s*dex|20\s*%\s*포도당|포도당\s*20\s*%|피하수액|\bPPN\b|\bTPN\b/i;
+const PROC = /medetomidine|dexmed|midazolam|\bmida\b|미다졸람|local\s*injection|펫소좀|propofol|alfaxa|ketamine|zoletil|xylazine|럼푼|마취|vincristine|vinblastine|doxorubicin|cyclophosphamide|carboplatin|cisplatin|lomustine|chlorambucil|cytarabine|asparaginase|mitoxantrone|toceranib|빈크리스틴|독소루비신|항암/i;
 const NONAME = /^(추가\s*)?(스테로이드약?|이뇨제|식욕촉진제|식촉제?|심장약|추가약|입원약\s*\d*|항혈전제|안정제|진정제|내복약|po제|간보호제|인흡착제|처방약|기타약|안약|영양제|항생제|진통제|소염제|항히스타민제|위장약|변비약|식후약|아침약|저녁약|\d+번약(\s*\+\s*\d+번약)*|퇴원약)(\s*PO)?$/i;
 const ORAL = /\bpo\b|po제|내복|경구|\d\s*[Tt]\b|\btab\b|캡슐|\bcap\b|시럽|스멕타|레나메진|인흡착제|간보호제|안정제|가바|갑상선약|알약|비오플|봉지|\d\s*알\b|\d\s*정\b|아조딜/i;
 const EYE = /양안|우안|좌안|점안|안약|리포직|포비돈|^V\d|^T\d|\bG\d\b/i;
 const NOTINJ = /드레싱|소독|사진|방사선|초음파|혈검|혈액검사|혈당|체중|체온|심박|호흡|혈압|구토|배변|배뇨|식이|산소|음수|물그릇|핫팩|자세|산책|라인|배액|세정|점이액|교체|측정|확인|보정|면회|목욕|미용|밴드|붕대|카테터|수혈|튜브|네뷸|가습|강급|급여|스푼|연고|스프레이|허니|술부|귀\s?세정|cryo|속도|변경|기입|흉방|요배양|검사|\bCRP\b/i;
-const CRI = /\bcri\b|\/\s*hr\b|시간당/i;
+const CRI = /\bcri\b|\/\s*(?:hr|h|kr)\b|시간당|\d+\s*시간|for\s*\d+\s*hours?\b/i;
 const COND = /필요시|prn|경우\s*x|없을\s*경우|이면|이하시|이상시|시\s*연결|시\s*중단|보류/i;
 const FLUID_ORDER = /^\s*(?:H\s*\/\s*S|HS|FLK|(?:0\.\d+%?\s*)?N\s*\/\s*S|0\.45\s*NaCl)\b/i;
 const ROUTINE = [17, 21, 1, 9];
@@ -2349,7 +2349,7 @@ box.innerHTML =
 '<div class="vsp-header" style="position:sticky;top:0;background:#173b36;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
 '<span class="vsp-brand">VETSYNC</span>' +
 '<nav class="vsp-tabs" aria-label="목록 선택">' + TABS.map((t) => '<button data-tab="' + t.id + '" aria-current="' + (t.id === 'blood' ? 'page' : 'false') + '" style="font:inherit;font-weight:700;padding:8px 16px;border:0;border-radius:8px;background:transparent;color:#fff">' + t.label + '</button>').join('') + '</nav>' +
-'<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.6</span>' +
+'<span class="vsp-header-spacer"></span><span class="vsp-version">2.6.7</span>' +
 '<button id="vsp-copy" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">복사</button>' +
 '<button id="vsp-x" class="vsp-header-action" style="font:inherit;padding:8px 14px;border:0;border-radius:8px;background:rgba(255,255,255,.12);color:#fff">닫기</button>' +
 '</div><div id="vsp-body" class="vsp-body" style="padding:0 16px"><p>불러오는 중…</p></div>';
